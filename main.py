@@ -25,6 +25,8 @@ HUGGING_TOKENS = os.getenv("HUGGING_TOKENS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_SEARCH_KEY = os.getenv("GOOGLE_SEARCH_KEY")
 GOOGLE_CX = os.getenv("GOOGLE_CX")
+BASE_URL = "https://render-linebot-masp.onrender.com"
+
 
 # Grab Allowed Users and Group ID from .env
 allowed_users_str = os.getenv("ALLOWED_USERS", "")
@@ -709,7 +711,7 @@ def send_ai_selection_menu(reply_token, target=None, use_push=False):
                 "type": "bubble",
                 "hero": {
                     "type": "image",
-                    "url": "https://df31-125-229-223-153.ngrok-free.app/static/openai.png",
+                    "url": f"{BASE_URL}/static/openai.png",
                     "size": "md"
                 },
                 "body": {
@@ -726,7 +728,7 @@ def send_ai_selection_menu(reply_token, target=None, use_push=False):
                 "type": "bubble",
                 "hero": {
                     "type": "image",
-                    "url": "https://df31-125-229-223-153.ngrok-free.app/static/deepseek.png",
+                    "url": f"{BASE_URL}/static/deepseek.png",
                     "size": "md"
                 },
                 "body": {
@@ -743,7 +745,7 @@ def send_ai_selection_menu(reply_token, target=None, use_push=False):
                 "type": "bubble",
                 "hero": {
                     "type": "image",
-                    "url": "https://df31-125-229-223-153.ngrok-free.app/static/meta.jpg",
+                    "url": f"{BASE_URL}/static/meta.jpg",
                     "size": "md"
                 },
                 "body": {
@@ -760,7 +762,7 @@ def send_ai_selection_menu(reply_token, target=None, use_push=False):
                 "type": "bubble",
                 "hero": {
                     "type": "image",
-                    "url": "https://df31-125-229-223-153.ngrok-free.app/static/giticon.png",  
+                    "url": f"{BASE_URL}/static/giticon.png",  
                     "size": "md",
                     "aspectRatio": "1:1",
                     "aspectMode": "fit"
@@ -813,7 +815,7 @@ def send_translation_menu(reply_token, target=None, use_push=False):
                 "type": "bubble",
                 "hero": {
                     "type": "image",
-                    "url": "https://df31-125-229-223-153.ngrok-free.app/static/openai.png",  
+                    "url": f"{BASE_URL}/static/openai.png",  
                     "size": "md"
                 },
                 "body": {
@@ -836,7 +838,7 @@ def send_translation_menu(reply_token, target=None, use_push=False):
                 "type": "bubble",
                 "hero": {
                     "type": "image",
-                    "url": "https://df31-125-229-223-153.ngrok-free.app/static/googletrans1.png",  # 請替換為實際圖片 URL
+                    "url": f"{BASE_URL}/static/googletrans1.png",  # 請替換為實際圖片 URL
                     "size": "md"
                 },
                 "body": {
