@@ -214,18 +214,18 @@ def handle_message(event):
 
     print(f"📢 [DEBUG] {user_id if not group_id else group_id} 當前模型: {ai_model}")
 
-    # 先檢查是否有"停止翻譯"指令
-    if "停" in user_message and "翻譯" in user_message:
-        if user_id in user_translation_config:
-            user_translation_config[user_id]["enabled"] = False
-        else:
-            user_translation_config[user_id] = {"enabled": False, "method": "", "src": "", "tgt": ""}
-        reply_request = ReplyMessageRequest(
-            replyToken=event.reply_token,
-            messages=[TextMessage(text="翻譯功能已停止。")]
-        )
-        messaging_api.reply_message(reply_request)
-        return
+    # # 先檢查是否有"停止翻譯"指令
+    # if "停" in user_message and "翻譯" in user_message:
+    #     if user_id in user_translation_config:
+    #         user_translation_config[user_id]["enabled"] = False
+    #     else:
+    #         user_translation_config[user_id] = {"enabled": False, "method": "", "src": "", "tgt": ""}
+    #     reply_request = ReplyMessageRequest(
+    #         replyToken=event.reply_token,
+    #         messages=[TextMessage(text="翻譯功能已停止。")]
+    #     )
+    #     messaging_api.reply_message(reply_request)
+    #     return
 
     # (1) 「給我id」：若訊息中同時包含「給我」和「id」
     if "給我" in user_message and "id" in user_message:
@@ -269,14 +269,10 @@ def handle_message(event):
         command_list = (
             "📝 支援的指令：\n"
             "1. 換模型: 更換 AI 語言模型 \n\t\t（預設為 Deepseek-R1）\n"
-            "2. 給我id: 顯示 LINE 個人 ID\n"
-            "3. 群組id: 顯示 LINE 群組 ID\n"
-            "4. 狗蛋出去: 機器人離開群組\n"
-            "5. 當前模型: 機器人現正使用的模型\n"
-            "6. 狗蛋生成: 生成圖片\n"
-            "7. 我要翻譯: 翻譯語言\n"
-            "8. 停止翻譯: 停止翻譯\n"
-            "9. 狗蛋情勒 狗蛋的超能力"
+            "2. 狗蛋出去: 機器人離開群組\n"
+            "3. 當前模型: 機器人現正使用的模型\n"
+            "4. 狗蛋生成: 生成圖片\n"
+            "5. 狗蛋情勒 狗蛋的超能力"
         )
         reply_request = ReplyMessageRequest(
             replyToken=event.reply_token,
@@ -375,73 +371,73 @@ def handle_message(event):
             send_ai_selection_menu(event.reply_token)
         return
     
-    # (4-d) 「Translate」
-    if "我要" in user_message and "翻譯" in user_message:
-        send_translation_menu(event.reply_token)
-        send_source_language_menu(event.reply_token)
-        send_target_language_menu(event.reply_token)
-        return
-    # 如果使用者輸入格式 "翻譯語言: zh->en"，則解析並儲存設定，啟用翻譯
-    if user_message.startswith("翻譯語言:"):
-        try:
-            # 格式假設為 "翻譯語言: 源->目標"（例如 "翻譯語言: zh->en"）
-            lang_setting = user_message.split(":", 1)[1].strip()
-            src, tgt = lang_setting.split("->")
-            src = src.strip()
-            tgt = tgt.strip()
-            if user_id not in user_translation_config:
-                user_translation_config[user_id] = {}
-            user_translation_config[user_id].update({"enabled": True, "source": src, "target": tgt})
-            reply_text = f"翻譯設定已更新：{src} -> {tgt}"
-        except Exception as e:
-            reply_text = "翻譯設定格式錯誤，請使用格式：翻譯語言: zh->en"
-        reply_request = ReplyMessageRequest(
-            replyToken=event.reply_token,
-            messages=[TextMessage(text=reply_text)]
-        )
-        messaging_api.reply_message(reply_request)
-        return
+    # # (4-d) 「Translate」
+    # if "我要" in user_message and "翻譯" in user_message:
+    #     send_translation_menu(event.reply_token)
+    #     send_source_language_menu(event.reply_token)
+    #     send_target_language_menu(event.reply_token)
+    #     return
+    # # 如果使用者輸入格式 "翻譯語言: zh->en"，則解析並儲存設定，啟用翻譯
+    # if user_message.startswith("翻譯語言:"):
+    #     try:
+    #         # 格式假設為 "翻譯語言: 源->目標"（例如 "翻譯語言: zh->en"）
+    #         lang_setting = user_message.split(":", 1)[1].strip()
+    #         src, tgt = lang_setting.split("->")
+    #         src = src.strip()
+    #         tgt = tgt.strip()
+    #         if user_id not in user_translation_config:
+    #             user_translation_config[user_id] = {}
+    #         user_translation_config[user_id].update({"enabled": True, "source": src, "target": tgt})
+    #         reply_text = f"翻譯設定已更新：{src} -> {tgt}"
+    #     except Exception as e:
+    #         reply_text = "翻譯設定格式錯誤，請使用格式：翻譯語言: zh->en"
+    #     reply_request = ReplyMessageRequest(
+    #         replyToken=event.reply_token,
+    #         messages=[TextMessage(text=reply_text)]
+    #     )
+    #     messaging_api.reply_message(reply_request)
+    #     return
     
-    # 檢查是否啟用了翻譯設定，若有則只進行翻譯並回覆翻譯結果，不執行 AI 回覆
-    if user_id in user_translation_config and user_translation_config[user_id].get("enabled"):
-        config = user_translation_config[user_id]
-        src_lang = config.get("src", "auto")  # 若未設定，可設為 "auto"
-        tgt_lang = config.get("tgt", "en")    # 預設翻譯成英文
-        # 封裝翻譯需求，這裡採用 ask_groq 的格式，model 傳入 "gpt-translation" 讓其使用翻譯專用分支
-        prompt = f"請將下列文字從 {src_lang} 翻譯成 {tgt_lang}：\n{user_message}"
-        translation = ask_groq(prompt, "gpt-translation")
-        if translation:
-            print(f"📢 [DEBUG] 翻譯結果：{translation}")
-            reply_request = ReplyMessageRequest(
-                replyToken=event.reply_token,
-                messages=[TextMessage(text=f"翻譯結果：{translation}")]
-            )
-            # 如果 reply token 為 "DUMMY"，代表此事件來自語音轉錄流程，需用 push_message 發送
-            if event.reply_token == "DUMMY":
-                target_id = event.source.group_id if event.source.type == "group" else event.source.user_id
-                push_request = PushMessageRequest(
-                    to=target_id,
-                    messages=reply_request.messages
-                )
-                messaging_api.push_message(push_request)
-            else:
-                messaging_api.reply_message(reply_request)
-            return
-        else:
-            reply_request = ReplyMessageRequest(
-                replyToken=event.reply_token,
-                messages=[TextMessage(text="❌ 翻譯失敗，請稍後再試。")]
-            )
-            if event.reply_token == "DUMMY":
-                target_id = event.source.group_id if event.source.type == "group" else event.source.user_id
-                push_request = PushMessageRequest(
-                    to=target_id,
-                    messages=reply_request.messages
-                )
-                messaging_api.push_message(push_request)
-            else:
-                messaging_api.reply_message(reply_request)
-            return
+    # # 檢查是否啟用了翻譯設定，若有則只進行翻譯並回覆翻譯結果，不執行 AI 回覆
+    # if user_id in user_translation_config and user_translation_config[user_id].get("enabled"):
+    #     config = user_translation_config[user_id]
+    #     src_lang = config.get("src", "auto")  # 若未設定，可設為 "auto"
+    #     tgt_lang = config.get("tgt", "en")    # 預設翻譯成英文
+    #     # 封裝翻譯需求，這裡採用 ask_groq 的格式，model 傳入 "gpt-translation" 讓其使用翻譯專用分支
+    #     prompt = f"請將下列文字從 {src_lang} 翻譯成 {tgt_lang}：\n{user_message}"
+    #     translation = ask_groq(prompt, "gpt-translation")
+    #     if translation:
+    #         print(f"📢 [DEBUG] 翻譯結果：{translation}")
+    #         reply_request = ReplyMessageRequest(
+    #             replyToken=event.reply_token,
+    #             messages=[TextMessage(text=f"翻譯結果：{translation}")]
+    #         )
+    #         # 如果 reply token 為 "DUMMY"，代表此事件來自語音轉錄流程，需用 push_message 發送
+    #         if event.reply_token == "DUMMY":
+    #             target_id = event.source.group_id if event.source.type == "group" else event.source.user_id
+    #             push_request = PushMessageRequest(
+    #                 to=target_id,
+    #                 messages=reply_request.messages
+    #             )
+    #             messaging_api.push_message(push_request)
+    #         else:
+    #             messaging_api.reply_message(reply_request)
+    #         return
+    #     else:
+    #         reply_request = ReplyMessageRequest(
+    #             replyToken=event.reply_token,
+    #             messages=[TextMessage(text="❌ 翻譯失敗，請稍後再試。")]
+    #         )
+    #         if event.reply_token == "DUMMY":
+    #             target_id = event.source.group_id if event.source.type == "group" else event.source.user_id
+    #             push_request = PushMessageRequest(
+    #                 to=target_id,
+    #                 messages=reply_request.messages
+    #             )
+    #             messaging_api.push_message(push_request)
+    #         else:
+    #             messaging_api.reply_message(reply_request)
+    #         return
 
     # (4-e)「狗蛋搜尋」指令：搜尋 + AI 總結
     if user_message.startswith("狗蛋搜尋"):
