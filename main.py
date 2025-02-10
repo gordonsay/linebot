@@ -1314,4 +1314,5 @@ def google_search(query):
     return search_results if search_results else None
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
+    app.run(host="0.0.0.0", port=port, debug=False)  # 移除 debug=True
