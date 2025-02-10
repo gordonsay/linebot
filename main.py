@@ -1113,58 +1113,67 @@ def translate_with_gpt(text, src, tgt):
         print(f"❌ 翻譯錯誤: {e}")
         return None
 
-def ask_groq(user_message, model):
+def ask_groq(user_message, model, retries=3, backoff_factor=1.0):
     """
     根據選擇的模型執行不同的 API：
       - 如果 model 為 "gpt-4o" 或 "gpt_4o_mini"，則呼叫 OpenAI API（原有邏輯）
       - 如果 model 為 "gpt-translation"，則使用翻譯模式，轉換為有效模型（例如 "gpt-3.5-turbo"）並使用翻譯 prompt
-      - 否則使用 Groq API
+      - 否則使用 Groq API，並加入重試機制避免連線錯誤。
     """
     print(f"[ask_groq] 模型參數: {model}")
-    try:
-        if model.lower() in ["gpt-4o", "gpt_4o_mini"]:
-            # (原有的 GPT-4o Mini 邏輯)
-            openai_client = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "user", "content": "你是一個名叫狗蛋的助手，盡量只使用繁體中文精簡跟朋友的語氣的幽默回答, 約莫20字內，限制不超過50字，除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
-                    {"role": "user", "content": user_message}
-                ]
-            )
-            print(f"📢 [DEBUG] OpenAI API 回應: {openai_client}")
-            return openai_client.choices[0].message.content.strip()
 
-        elif model.lower() == "gpt-translation":
-            # 對於翻譯任務，使用有效的模型（例如 gpt-3.5-turbo），並不強制回覆繁體中文
-            effective_model = "gpt-3.5-turbo"
-            print(f"📢 [DEBUG] 呼叫 OpenAI API (翻譯模式)，使用模型: {effective_model}")
-            response = openai.ChatCompletion.create(
-                model=effective_model,
-                messages=[
-                    {"role": "system", "content": "你是一位專業翻譯專家，請根據使用者的需求精準且自然地翻譯以下內容。當請求為翻譯時, 全部內容一定都要完成翻譯不殘留原語言"},
-                    {"role": "user", "content": user_message}
-                ]
-            )
-            return response.choices[0].message.content.strip()
+    for i in range(retries):
+        try:
+            if model.lower() in ["gpt-4o", "gpt_4o_mini"]:
+                # OpenAI GPT-4o Mini
+                openai_client = openai.ChatCompletion.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "user", "content": "你是一個名叫狗蛋的助手，盡量只使用繁體中文精簡跟朋友的語氣的幽默回答, 約莫20字內，限制不超過50字，除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
+                        {"role": "user", "content": user_message}
+                    ]
+                )
+                print(f"📢 [DEBUG] OpenAI API 回應: {openai_client}")
+                return openai_client.choices[0].message.content.strip()
 
-        else:
-            # Groq API 邏輯 (保持不變)
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": "你是一個名叫狗蛋的助手，跟使用者是朋友關係, 盡量只使用繁體中文方式進行幽默回答, 約莫20字內，限制不超過50字, 除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
-                    {"role": "user", "content": user_message},
-                ],
-                model=model.lower(),
-            )
-            if not chat_completion.choices:
-                return "❌ 狗蛋無法回應，請稍後再試。"
-            content = chat_completion.choices[0].message.content.strip()
-            content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-            return content
+            elif model.lower() == "gpt-translation":
+                # OpenAI 翻譯模式
+                effective_model = "gpt-3.5-turbo"
+                print(f"📢 [DEBUG] 呼叫 OpenAI API (翻譯模式)，使用模型: {effective_model}")
+                response = openai.ChatCompletion.create(
+                    model=effective_model,
+                    messages=[
+                        {"role": "system", "content": "你是一位專業翻譯專家，請根據使用者的需求精準且自然地翻譯以下內容。當請求為翻譯時, 全部內容一定都要完成翻譯不殘留原語言"},
+                        {"role": "user", "content": user_message}
+                    ]
+                )
+                return response.choices[0].message.content.strip()
 
-    except Exception as e:
-        print(f"❌ AI API 呼叫錯誤: {e}")
-        return "❌ 狗蛋伺服器錯誤，請稍後再試。"
+            else:
+                # Groq API，加入重試機制
+                chat_completion = client.chat.completions.create(
+                    messages=[
+                        {"role": "system", "content": "你是一個名叫狗蛋的助手，跟使用者是朋友關係, 盡量只使用繁體中文方式進行幽默回答, 約莫20字內，限制不超過50字, 除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
+                        {"role": "user", "content": user_message},
+                    ],
+                    model=model.lower(),
+                )
+                if not chat_completion.choices:
+                    return "❌ 狗蛋無法回應，請稍後再試。"
+
+                content = chat_completion.choices[0].message.content.strip()
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                return content
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ API 連線失敗 (第 {i+1} 次)：{e}")
+            time.sleep(backoff_factor * (2 ** i))  # 指數退避 (1s, 2s, 4s)
+
+        except Exception as e:
+            print(f"❌ AI API 呼叫錯誤: {e}")
+            return "❌ 狗蛋伺服器錯誤，請稍後再試。"
+
+    return "❌ 無法連線至 AI 服務，請稍後再試。"
 
 def random_reply(reply_token, target, messaging_api):
 
