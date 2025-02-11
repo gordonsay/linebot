@@ -1,4 +1,5 @@
-import os, re, json, openai, random, time, requests
+import os, re, json, openai, random, time, requests, shutil
+from pydub import AudioSegment
 from flask import Flask, request, jsonify
 from linebot.exceptions import InvalidSignatureError
 from linebot.v3.messaging import MessagingApi, Configuration, ApiClient
@@ -11,6 +12,9 @@ from groq import Groq
 from dotenv import load_dotenv
 from flask import send_from_directory
 from types import SimpleNamespace
+from bs4 import BeautifulSoup
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 
 # Load Environment Arguments
 load_dotenv()
@@ -25,8 +29,18 @@ HUGGING_TOKENS = os.getenv("HUGGING_TOKENS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_SEARCH_KEY = os.getenv("GOOGLE_SEARCH_KEY")
 GOOGLE_CX = os.getenv("GOOGLE_CX")
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+CWB_API_KEY = os.getenv("CWB_API_KEY")
+CWB_API_URL = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/F-D0047-091"
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 BASE_URL = "https://render-linebot-masp.onrender.com"
 
+# 初始化 Spotipy
+spotify_auth = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
+spotify_api = spotipy.Spotify(auth_manager=spotify_auth)
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET))
 
 # Grab Allowed Users and Group ID from .env
 allowed_users_str = os.getenv("ALLOWED_USERS", "")
@@ -42,6 +56,73 @@ client = Groq(api_key=GROQ_API_KEY)
 
 # Initialize Flask 
 app = Flask(__name__)
+
+# 城市對應表（避免輸入錯誤）
+CITY_MAPPING = {
+    # 台灣縣市
+    "台北": "Taipei",
+    "新北": "New Taipei",
+    "桃園": "Taoyuan",
+    "台中": "Taichung",
+    "台南": "Tainan",
+    "高雄": "Kaohsiung",
+    "基隆": "Keelung",
+    "新竹": "Hsinchu",
+    "嘉義": "Chiayi",
+    "苗栗": "Miaoli",
+    "彰化": "Changhua",
+    "南投": "Nantou",
+    "雲林": "Yunlin",
+    "嘉義": "Chiayi",
+    "屏東": "Pingtung",
+    "宜蘭": "Yilan",
+    "花蓮": "Hualien",
+    "台東": "Taitung",
+    "澎湖": "Penghu",
+    "金門": "Kinmen",
+    "連江": "Lienchiang",  # 馬祖
+
+    # 世界大都市
+    "東京": "Tokyo",
+    "大阪": "Osaka",
+    "京都": "Kyoto",
+    "首爾": "Seoul",
+    "釜山": "Busan",
+    "曼谷": "Bangkok",
+    "新加坡": "Singapore",
+    "吉隆坡": "Kuala Lumpur",
+    "胡志明": "Ho Chi Minh City",
+    "河內": "Hanoi",
+    "雅加達": "Jakarta",
+    "香港": "Hong Kong",
+    "澳門": "Macau",
+    "北京": "Beijing",
+    "上海": "Shanghai",
+    "廣州": "Guangzhou",
+    "深圳": "Shenzhen",
+    "倫敦": "London",
+    "巴黎": "Paris",
+    "柏林": "Berlin",
+    "阿姆斯特丹": "Amsterdam",
+    "羅馬": "Rome",
+    "馬德里": "Madrid",
+    "紐約": "New York",
+    "洛杉磯": "Los Angeles",
+    "芝加哥": "Chicago",
+    "舊金山": "San Francisco",
+    "華盛頓": "Washington",
+    "多倫多": "Toronto",
+    "溫哥華": "Vancouver",
+    "墨西哥城": "Mexico City",
+    "布宜諾斯艾利斯": "Buenos Aires",
+    "悉尼": "Sydney",
+    "墨爾本": "Melbourne",
+    "開普敦": "Cape Town",
+    "開羅": "Cairo",
+    "杜拜": "Dubai",
+    "伊斯坦堡": "Istanbul",
+    "莫斯科": "Moscow"
+}
 
 # Record AI model choosen by User
 user_ai_choice = {}
@@ -100,19 +181,16 @@ def handle_follow(event):
 # Support Function
 # ----------------------------------
 def safe_api_call(api_func, request_obj, retries=3, backoff_factor=1.0):
-    """
-    呼叫 LINE API，若遇到 429 錯誤則採取指數退避重試機制
-    """
     for i in range(retries):
         try:
             return api_func(request_obj)
         except Exception as e:
             if "429" in str(e):
                 wait_time = backoff_factor * (2 ** i)
-                print(f"Rate limit encountered. Retrying in {wait_time} seconds...")
+                print(f"🔄 Rate limit: {wait_time} 秒後重試...")
                 time.sleep(wait_time)
             else:
-                print(f"API call error: {e}")
+                print(f"❌ API call error: {e}")
                 raise
     raise Exception("API call failed after retries")
 
@@ -214,19 +292,6 @@ def handle_message(event):
 
     print(f"📢 [DEBUG] {user_id if not group_id else group_id} 當前模型: {ai_model}")
 
-    # # 先檢查是否有"停止翻譯"指令
-    # if "停" in user_message and "翻譯" in user_message:
-    #     if user_id in user_translation_config:
-    #         user_translation_config[user_id]["enabled"] = False
-    #     else:
-    #         user_translation_config[user_id] = {"enabled": False, "method": "", "src": "", "tgt": ""}
-    #     reply_request = ReplyMessageRequest(
-    #         replyToken=event.reply_token,
-    #         messages=[TextMessage(text="翻譯功能已停止。")]
-    #     )
-    #     messaging_api.reply_message(reply_request)
-    #     return
-
     # (1) 「給我id」：若訊息中同時包含「給我」和「id」
     if "給我" in user_message and "id" in user_message:
         reply_text = f"您的 User ID 是：\n{user_id}"
@@ -272,7 +337,11 @@ def handle_message(event):
             "2. 狗蛋出去: 機器人離開群組\n"
             "3. 當前模型: 機器人現正使用的模型\n"
             "4. 狗蛋生成: 生成圖片\n"
-            "5. 狗蛋情勒 狗蛋的超能力"
+            "5. 狗蛋介紹: 人物或角色的說明\n"
+            "6. 狗蛋搜圖: 即時搜圖\n"
+            "7. 狗蛋唱歌: 串連Spotify試聽\n"
+            "8. 狗蛋氣象: 確認當前天氣\n"
+            "9. 狗蛋情勒: 狗蛋的超能力\n"
         )
         reply_request = ReplyMessageRequest(
             replyToken=event.reply_token,
@@ -371,74 +440,6 @@ def handle_message(event):
             send_ai_selection_menu(event.reply_token)
         return
     
-    # # (4-d) 「Translate」
-    # if "我要" in user_message and "翻譯" in user_message:
-    #     send_translation_menu(event.reply_token)
-    #     send_source_language_menu(event.reply_token)
-    #     send_target_language_menu(event.reply_token)
-    #     return
-    # # 如果使用者輸入格式 "翻譯語言: zh->en"，則解析並儲存設定，啟用翻譯
-    # if user_message.startswith("翻譯語言:"):
-    #     try:
-    #         # 格式假設為 "翻譯語言: 源->目標"（例如 "翻譯語言: zh->en"）
-    #         lang_setting = user_message.split(":", 1)[1].strip()
-    #         src, tgt = lang_setting.split("->")
-    #         src = src.strip()
-    #         tgt = tgt.strip()
-    #         if user_id not in user_translation_config:
-    #             user_translation_config[user_id] = {}
-    #         user_translation_config[user_id].update({"enabled": True, "source": src, "target": tgt})
-    #         reply_text = f"翻譯設定已更新：{src} -> {tgt}"
-    #     except Exception as e:
-    #         reply_text = "翻譯設定格式錯誤，請使用格式：翻譯語言: zh->en"
-    #     reply_request = ReplyMessageRequest(
-    #         replyToken=event.reply_token,
-    #         messages=[TextMessage(text=reply_text)]
-    #     )
-    #     messaging_api.reply_message(reply_request)
-    #     return
-    
-    # # 檢查是否啟用了翻譯設定，若有則只進行翻譯並回覆翻譯結果，不執行 AI 回覆
-    # if user_id in user_translation_config and user_translation_config[user_id].get("enabled"):
-    #     config = user_translation_config[user_id]
-    #     src_lang = config.get("src", "auto")  # 若未設定，可設為 "auto"
-    #     tgt_lang = config.get("tgt", "en")    # 預設翻譯成英文
-    #     # 封裝翻譯需求，這裡採用 ask_groq 的格式，model 傳入 "gpt-translation" 讓其使用翻譯專用分支
-    #     prompt = f"請將下列文字從 {src_lang} 翻譯成 {tgt_lang}：\n{user_message}"
-    #     translation = ask_groq(prompt, "gpt-translation")
-    #     if translation:
-    #         print(f"📢 [DEBUG] 翻譯結果：{translation}")
-    #         reply_request = ReplyMessageRequest(
-    #             replyToken=event.reply_token,
-    #             messages=[TextMessage(text=f"翻譯結果：{translation}")]
-    #         )
-    #         # 如果 reply token 為 "DUMMY"，代表此事件來自語音轉錄流程，需用 push_message 發送
-    #         if event.reply_token == "DUMMY":
-    #             target_id = event.source.group_id if event.source.type == "group" else event.source.user_id
-    #             push_request = PushMessageRequest(
-    #                 to=target_id,
-    #                 messages=reply_request.messages
-    #             )
-    #             messaging_api.push_message(push_request)
-    #         else:
-    #             messaging_api.reply_message(reply_request)
-    #         return
-    #     else:
-    #         reply_request = ReplyMessageRequest(
-    #             replyToken=event.reply_token,
-    #             messages=[TextMessage(text="❌ 翻譯失敗，請稍後再試。")]
-    #         )
-    #         if event.reply_token == "DUMMY":
-    #             target_id = event.source.group_id if event.source.type == "group" else event.source.user_id
-    #             push_request = PushMessageRequest(
-    #                 to=target_id,
-    #                 messages=reply_request.messages
-    #             )
-    #             messaging_api.push_message(push_request)
-    #         else:
-    #             messaging_api.reply_message(reply_request)
-    #         return
-
     # (4-e)「狗蛋搜尋」指令：搜尋 + AI 總結
     if user_message.startswith("狗蛋搜尋"):
         search_query = user_message.replace("狗蛋搜尋", "").strip()
@@ -457,6 +458,106 @@ def handle_message(event):
         reply_request = ReplyMessageRequest(
             replyToken=event.reply_token,
             messages=[TextMessage(text=reply_text)]
+        )
+        send_response(event, reply_request)
+        return
+    
+    # (4-f)狗蛋介紹 Image + AI 總結
+    if user_message.startswith("狗蛋介紹"):
+        # 解析人物名稱
+        messages = []
+        person_name = user_message.replace("狗蛋介紹", "").strip()
+        if not person_name:
+            reply_request = ReplyMessageRequest(
+                replyToken=event.reply_token,
+                messages=[TextMessage(text="請提供要查詢的人物名稱，例如：狗蛋介紹 川普")]
+            )
+            send_response(event, reply_request)
+            return
+        # 取得 AI 回應 + 圖片
+        response_text, image_url = search_person_info(person_name)
+        if image_url:
+            messages.append(create_flex_message(response_text, image_url))  # 附加圖片
+
+        reply_request = ReplyMessageRequest(
+            replyToken=event.reply_token,
+            messages=messages
+        )
+        send_response(event, reply_request)
+        return
+
+    # (4-g)狗蛋搜圖 Image search
+    if user_message.startswith("狗蛋搜圖"):
+        search_query = user_message.replace("狗蛋搜圖", "").strip()
+
+        if not search_query:
+            reply_text = "請提供要搜尋的內容，例如：狗蛋搜圖 日本女星"
+            messages = [TextMessage(text=reply_text)]
+        else:
+            image_url = search_google_image(search_query)
+
+            if image_url:
+                messages = [create_flex_message(f"「{search_query}」的圖片 🔍", image_url)]
+            else:
+                messages = [TextMessage(text=f"找不到 {search_query} 的相關圖片 😢")]
+
+        reply_request = ReplyMessageRequest(
+            replyToken=event.reply_token,
+            messages=messages
+        )
+        send_response(event, reply_request)
+        return
+    
+    # (4-h)狗蛋唱歌 Spotify link
+    if user_message.startswith("狗蛋唱歌"):
+        song_name = user_message.replace("狗蛋唱歌", "").strip()
+        song_data = search_spotify_song(song_name)
+
+        if not song_data:
+            reply_request = ReplyMessageRequest(
+                replyToken=event.reply_token,
+                messages=[TextMessage(text="❌ 沒找到這首歌，請試試別的！")]
+            )
+        else:
+            mp3_url = song_data.get("preview_url")
+            if mp3_url:
+                hosted_m4a_url = download_and_host_audio(mp3_url)  # 轉換為 m4a
+
+                if hosted_m4a_url:
+                    reply_request = ReplyMessageRequest(
+                        replyToken=event.reply_token,
+                        messages=[
+                            TextMessage(text=f"🎶 這是 {song_data['name']} 的預覽音頻 🎵"),
+                            AudioMessageContent(original_content_url=hosted_m4a_url, duration=30000)
+                        ]
+                    )
+                else:
+                    reply_request = ReplyMessageRequest(
+                        replyToken=event.reply_token,
+                        messages=[TextMessage(text="❌ 轉換歌曲失敗，請稍後再試！")]
+                    )
+            else:
+                reply_request = ReplyMessageRequest(
+                    replyToken=event.reply_token,
+                    messages=[TextMessage(text=f"🎵 {song_data['name']} 的歌曲連結：{song_data['song_url']} ）")]
+                )
+
+        send_response(event, reply_request)
+        return
+
+    # (4-i)狗蛋氣象
+    # 如果使用者輸入 "台北天氣"，則查詢台北天氣
+    if "氣象" in user_message and "狗蛋" in user_message:
+        city = user_message.replace("狗蛋氣象", "").strip()
+        
+        if city:
+            weather_info = get_weather_weatherapi(city)
+        else:
+            weather_info = "❌ 請輸入有效的城市名稱（例如：台北氣象、高雄氣象）"
+
+        reply_request = ReplyMessageRequest(
+            replyToken=event.reply_token,
+            messages=[TextMessage(text=f"{weather_info}")]
         )
         send_response(event, reply_request)
         return
@@ -644,54 +745,6 @@ def handle_postback(event):
         messaging_api.reply_message(reply_req)
         return
 
-    if data in {"translate_gpt", "translate_google"}:
-        if user_id not in user_translation_config:
-            user_translation_config[user_id] = {"enabled": False, "method": "", "src": "", "tgt": ""}
-        if data == "translate_gpt":
-            user_translation_config[user_id]["method"] = "gpt"
-            reply_text = "翻譯模型選擇：GPT"
-        else:
-            user_translation_config[user_id]["method"] = "google"
-            reply_text = "翻譯模型選擇：Google"
-        print(f"📢 [DEBUG] {user_id} 選擇翻譯方案: {user_translation_config[user_id]['method']}")
-        reply_req = ReplyMessageRequest(
-            replyToken=event.reply_token,
-            messages=[TextMessage(text=reply_text)]
-        )
-        messaging_api.reply_message(reply_req)
-        target = event.source.group_id if event.source.type == "group" else user_id
-        send_source_language_menu("DUMMY", target=target, use_push=True)
-        return
-
-    if data.startswith("src_"):
-        src_lang = data.split("_", 1)[1]
-        if user_id not in user_translation_config:
-            user_translation_config[user_id] = {"enabled": False, "method": "", "src": "", "tgt": ""}
-        user_translation_config[user_id]["src"] = src_lang
-        print(f"📢 [DEBUG] {user_id} 選擇來源語言: {src_lang}")
-        reply_req = ReplyMessageRequest(
-            replyToken=event.reply_token,
-            messages=[TextMessage(text=f"來源語言已設定為 {src_lang}。\n請選擇翻譯目標語言：")]
-        )
-        messaging_api.reply_message(reply_req)
-        target = event.source.group_id if event.source.type == "group" else user_id
-        send_target_language_menu("DUMMY", target=target, use_push=True)
-        return
-
-    if data.startswith("tgt_"):
-        tgt_lang = data.split("_", 1)[1]
-        if user_id not in user_translation_config:
-            user_translation_config[user_id] = {"enabled": False, "method": "", "src": "", "tgt": ""}
-        user_translation_config[user_id]["tgt"] = tgt_lang
-        user_translation_config[user_id]["enabled"] = True
-        print(f"📢 [DEBUG] {user_id} 選擇目標語言: {tgt_lang}")
-        reply_req = ReplyMessageRequest(
-            replyToken=event.reply_token,
-            messages=[TextMessage(text=f"翻譯設定完成：\n來源語言 {user_translation_config[user_id]['src']} -> 目標語言 {tgt_lang}\n請輸入欲翻譯內容:")]
-        )
-        messaging_api.reply_message(reply_req)
-        return
-
     reply_req = ReplyMessageRequest(
         replyToken=event.reply_token,
         messages=[TextMessage(text="未知選擇，請重試。")]
@@ -801,317 +854,6 @@ def send_ai_selection_menu(reply_token, target=None, use_push=False):
             messaging_api.reply_message(reply_request)
     except Exception as e:
         print(f"❌ FlexMessage Error: {e}")
-
-def send_translation_menu(reply_token, target=None, use_push=False):
-    """發送翻譯選擇選單，僅在輸入 '我要翻譯' 時出現"""
-    flex_contents_json = {
-        "type": "carousel",
-        "contents": [
-            {
-                "type": "bubble",
-                "hero": {
-                    "type": "image",
-                    "url": f"{BASE_URL}/static/openai.png",  
-                    "size": "md"
-                },
-                "body": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "justifyContent": "center",
-                    "contents": [
-                        {"type": "text", "text": "精準但較緩慢", "weight": "bold", "size": "xl", "align": "center"}
-                    ]
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {"type": "button", "action": {"type": "postback", "label": "選擇此方案", "data": "translate_gpt"}}
-                    ]
-                }
-            },
-            {
-                "type": "bubble",
-                "hero": {
-                    "type": "image",
-                    "url": f"{BASE_URL}/static/googletrans1.png",  # 請替換為實際圖片 URL
-                    "size": "md"
-                },
-                "body": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "justifyContent": "center",
-                    "contents": [
-                        {"type": "text", "text": "快速直覺", "weight": "bold", "size": "xl", "align": "center"}
-                    ]
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {"type": "button", "action": {"type": "postback", "label": "選擇此方案", "data": "translate_google"}}
-                    ]
-                }
-            }
-        ]
-    }
-
-    try:
-        flex_json_str = json.dumps(flex_contents_json)
-        flex_contents = FlexContainer.from_json(flex_json_str)
-        flex_message = FlexMessage(
-            alt_text="請選擇翻譯方案",
-            contents=flex_contents
-        )
-        reply_request = ReplyMessageRequest(
-            replyToken=reply_token,
-            messages=[
-                TextMessage(text="請選擇翻譯方案："),
-                flex_message
-            ]
-        )
-        if use_push and target:
-            push_request = PushMessageRequest(
-                to=target,
-                messages=reply_request.messages
-            )
-            messaging_api.push_message(push_request)
-        else:
-            messaging_api.reply_message(reply_request)
-    except Exception as e:
-        print(f"❌ Translation FlexMessage Error: {e}")
-
-def send_source_language_menu(reply_token, target=None, use_push=False):
-    """
-    發送翻譯來源語言選單，單一 bubble 內包含所有語言按鈕。
-    語言選項：
-      繁體中文：zh-TW
-      簡體中文：zh-CN
-      日文：ja
-      英文：en
-      韓文：ko
-    """
-    flex_contents_json = {
-        "type": "bubble",
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": "請選擇翻譯來源語言：",
-                    "weight": "bold",
-                    "size": "xl",
-                    "align": "center"
-                },
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "繁體中文",
-                                "data": "src_zh-TW"
-                            }
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "简体中文",
-                                "data": "src_zh-CN"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "日本語",
-                                "data": "src_ja"
-                            }
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "English",
-                                "data": "src_en"
-                            }
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "한국어",
-                                "data": "src_ko"
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-    }
-    try:
-        flex_json_str = json.dumps(flex_contents_json)
-        flex_contents = FlexContainer.from_json(flex_json_str)
-        flex_message = FlexMessage(
-            alt_text="請選擇翻譯來源語言",
-            contents=flex_contents
-        )
-        reply_request = ReplyMessageRequest(
-            replyToken=reply_token,
-            messages=[
-                TextMessage(text="請選擇翻譯來源語言："),
-                flex_message
-            ]
-        )
-        if use_push and target:
-            push_request = PushMessageRequest(
-                to=target,
-                messages=reply_request.messages
-            )
-            messaging_api.push_message(push_request)
-        else:
-            messaging_api.reply_message(reply_request)
-    except Exception as e:
-        print(f"❌ Source Language FlexMessage Error: {e}")
-
-def send_target_language_menu(reply_token, target=None, use_push=False):
-    """
-    發送翻譯目標語言選單，單一 bubble 內包含所有語言按鈕。
-    語言選項：
-      繁體中文：zh-TW
-      簡體中文：zh-CN
-      日文：ja
-      英文：en
-      韓文：ko
-    """
-    flex_contents_json = {
-        "type": "bubble",
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": "請選擇翻譯目標語言：",
-                    "weight": "bold",
-                    "size": "xl",
-                    "align": "center"
-                },
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "繁體中文",
-                                "data": "tgt_zh-TW"
-                            }
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "简体中文",
-                                "data": "tgt_zh-CN"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "type": "box",
-                    "layout": "horizontal",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "日本語",
-                                "data": "tgt_ja"
-                            }
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "English",
-                                "data": "tgt_en"
-                            }
-                        },
-                        {
-                            "type": "button",
-                            "action": {
-                                "type": "postback",
-                                "label": "한국어",
-                                "data": "tgt_ko"
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-    }
-    try:
-        flex_json_str = json.dumps(flex_contents_json)
-        flex_contents = FlexContainer.from_json(flex_json_str)
-        flex_message = FlexMessage(
-            alt_text="請選擇翻譯目標語言",
-            contents=flex_contents
-        )
-        reply_request = ReplyMessageRequest(
-            replyToken=reply_token,
-            messages=[
-                TextMessage(text="請選擇翻譯目標語言："),
-                flex_message
-            ]
-        )
-        if use_push and target:
-            push_request = PushMessageRequest(
-                to=target,
-                messages=reply_request.messages
-            )
-            messaging_api.push_message(push_request)
-        else:
-            messaging_api.reply_message(reply_request)
-    except Exception as e:
-        print(f"❌ Target Language FlexMessage Error: {e}")
-
-def translate_with_gpt(text, src, tgt):
-    """
-    使用 OpenAI 的 GPT-3.5-turbo 進行翻譯，
-    將輸入文字從 src 語言翻譯成 tgt 語言。
-
-    參數:
-      text: 要翻譯的文字
-      src: 源語言代碼（例如 "zh-TW" 表示繁體中文、"zh-CN" 表示簡體中文、"ja" 表示日文、"en" 表示英文、"ko" 表示韓文）
-      tgt: 目標語言代碼（例如 "en"、"zh-TW" 等）
-    """
-    prompt = f"請將下列文字從 {src} 翻譯成 {tgt}：\n{text}"
-    try:
-        # 注意：新版 OpenAI SDK 必須直接使用 openai.ChatCompletion.create()
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # 使用有效且您有權限使用的模型
-            messages=[
-                {"role": "system", "content": "你是一位專業的翻譯專家，請精準且自然地翻譯以下內容。"},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        translation = response.choices[0].message.content.strip()
-        return translation
-    except Exception as e:
-        print(f"❌ 翻譯錯誤: {e}")
-        return None
 
 def ask_groq(user_message, model, retries=3, backoff_factor=1.0):
     """
@@ -1319,6 +1061,193 @@ def google_search(query):
     print(f"📢 [DEBUG] Google 搜尋結果: {search_results}")
 
     return search_results if search_results else None
+
+def search_person_info(name):
+    """使用 AI 生成人物簡介，並搭配 Google 圖片搜尋"""
+    # 透過 AI 生成簡單描述
+    prompt = f"請用簡單的方式介紹 {name} 是誰，並以 2-3 句話概述。"
+    response_text = ask_groq(prompt, "deepseek-r1-distill-llama-70b")  # 調用 AI 來回答
+
+    # 進行 Google 圖片搜尋
+    google_url = f"https://www.google.com/search?q={name}&tbm=isch"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    google_response = requests.get(google_url, headers=headers)
+
+    if google_response.status_code == 200:
+        soup = BeautifulSoup(google_response.text, "html.parser")
+        images = soup.find_all("img")
+        image_url = images[1]["src"] if len(images) > 1 else None  # 選擇第一張圖片
+    else:
+        image_url = None
+
+    return response_text, image_url
+
+def create_flex_message(text, image_url):
+    if not image_url or not image_url.startswith("http"):
+        return TextMessage(text="找不到適合的圖片，請嘗試其他關鍵字。")
+
+    flex_content = {
+        "type": "bubble",
+        "hero": {
+            "type": "image",
+            "url": image_url,
+            "size": "xl",
+            "aspectRatio": "1:1",
+            "aspectMode": "fit"
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": text,
+                    "wrap": True,
+                    "weight": "bold",
+                    "size": "md"
+                }
+            ]
+        }
+    }
+
+    flex_json_str = json.dumps(flex_content)
+    flex_contents = FlexContainer.from_json(flex_json_str)
+    return FlexMessage(alt_text=text, contents=flex_contents)
+
+def search_google_image(query):
+    """搜尋 Google 圖片並返回第一張有效的圖片 URL"""
+    google_url = f"https://www.google.com/search?q={query}&tbm=isch"
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    try:
+        response = requests.get(google_url, headers=headers)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, "html.parser")
+            images = soup.find_all("img")
+
+            for img in images[1:]:  # 跳過第一張（通常是 Google 標誌）
+                image_url = img.get("src", "")
+                if image_url.startswith("http"):  # 只回傳有效的 HTTP(S) 圖片
+                    return image_url
+    except Exception as e:
+        print(f"❌ Google 搜圖錯誤: {e}")
+
+    return None  # 找不到圖片時回傳 None
+
+def search_spotify_song(song_name):
+    """ 透過 Spotify API 搜尋歌曲並回傳預覽 URL 與歌曲連結 """
+    try:
+        results = sp.search(q=song_name, limit=1, type='track')
+        if not results["tracks"]["items"]:
+            return None  # 沒找到歌曲
+        
+        track = results["tracks"]["items"][0]
+        return {
+            "name": track["name"],
+            "preview_url": track["preview_url"],  # 30 秒的音頻預覽
+            "song_url": track["external_urls"]["spotify"]  # Spotify 播放連結
+        }
+    except Exception as e:
+        print(f"❌ [ERROR] Spotify API 呼叫失敗: {e}")
+        return None
+
+def download_and_host_audio(preview_url, filename="song_preview"):
+    """ 下載 Spotify 的 preview.mp3，轉換為 m4a，並存到 Flask 的 /static/ 目錄 """
+    tmp_mp3 = f"/tmp/{filename}.mp3"  # 暫存 mp3
+    tmp_m4a = f"/tmp/{filename}.m4a"  # 暫存 m4a
+    static_m4a = f"./static/{filename}.m4a"  # 最終存放於 Flask 可訪問的 /static/
+    hosted_url = f"{BASE_URL}/static/{filename}.m4a"  # 你的 Flask 伺服器網址
+
+    try:
+        response = requests.get(preview_url, stream=True)
+        if response.status_code == 200:
+            # 下載 mp3
+            with open(tmp_mp3, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    f.write(chunk)
+
+            # 轉換為 m4a
+            audio = AudioSegment.from_mp3(tmp_mp3)
+            audio.export(tmp_m4a, format="ipod")  # "ipod" 會輸出 .m4a 格式
+            
+            # 移動檔案到 Flask 的 /static/ 目錄
+            shutil.move(tmp_m4a, static_m4a)
+
+            print(f"✅ 音檔轉換成功: {static_m4a}")
+            return hosted_url
+        else:
+            print("❌ 下載失敗，狀態碼:", response.status_code)
+            return None
+    except Exception as e:
+        print(f"❌ 下載或轉換失敗: {e}")
+        return None
+
+def get_weather_weatherapi(city):
+    """ 使用 OpenWeather API 查詢天氣 """
+    API_KEY = OPENWEATHER_API_KEY
+    try:
+        # 確保 city 是 OpenWeather 可接受的名稱
+        city = CITY_MAPPING.get(city, city)
+
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric&lang=zh_tw"
+        print(f"📢 [DEBUG] 呼叫 API: {url}")  # 確保 city 轉換正確
+        
+        response = requests.get(url)
+        data = response.json()
+
+        if data.get("cod") != 200:
+            print(f"❌ OpenWeather API 錯誤: {data}")  # Debug API 回應
+            return "❌ 無法取得天氣資訊，請確認城市名稱是否正確"
+
+        # 提取需要的天氣資訊
+        temp = data["main"]["temp"]
+        weather_desc = data["weather"][0]["description"]
+        wind_speed = data["wind"]["speed"]
+        humidity = data["main"]["humidity"]
+        # 建立天氣描述
+        weather_text = (
+                f"🌡 溫度：{temp}°C\n"
+                f"💧 濕度：{humidity}%\n"
+                f"💨 風速：{wind_speed} m/s\n"
+                f"🌤 天氣狀況：{weather_desc}"
+        )
+        # 讓 AI 進行天氣分析
+        ai_analysis = analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed)
+
+        return f"🌍 {city} 即時天氣預報：\n{weather_text}\n\n🧑‍🔬 狗蛋關心您：\n{ai_analysis}"
+
+
+    except requests.exceptions.RequestException as e:
+        return f"❌ 取得天氣資料失敗: {e}"
+
+def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
+    """ 使用 OpenAI 進行天氣分析，提供穿搭 & 注意事項 """
+
+    prompt = f"""
+    目前 {city} 的天氣條件如下：
+    - 溫度：{temp}°C
+    - 濕度：{humidity}%
+    - 天氣狀況：{weather_desc}
+    - 風速：{wind_speed} m/s
+
+    根據這些數據：
+    1. 給出適合的穿搭建議（例如：冷天穿什麼、熱天注意什麼）。
+    2. 提供出門注意事項（如可能下雨、空氣品質不好、強風等）。
+    3. 回應時請使用繁體中文，字數控制在 50 字內，並用口語化的方式回答。
+    """
+
+    # Groq API 邏輯 (保持不變)
+    chat_completion = client.chat.completions.create(
+        messages=[
+                    {"role": "system", "content": "你是一個名叫狗蛋的助手，跟使用者是朋友關係, 盡量只使用繁體中文方式進行幽默回答, 約莫20字內，限制不超過50字"},
+                    {"role": "user", "content": prompt},
+                ],
+        model="deepseek-r1-distill-llama-70b",)
+    if not chat_completion.choices:
+        return "❌ 狗蛋無法回應，請稍後再試。"
+    content = chat_completion.choices[0].message.content.strip()
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    return content
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
