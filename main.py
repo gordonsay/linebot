@@ -341,7 +341,8 @@ def handle_message(event):
             "6. 狗蛋搜圖: 即時搜圖\n"
             "7. 狗蛋唱歌: 串連Spotify試聽\n"
             "8. 狗蛋氣象: 確認當前天氣\n"
-            "9. 狗蛋情勒: 狗蛋的超能力"
+            "9. 狗蛋預報: 確認三天天氣預報\n"
+            "10. 狗蛋情勒: 狗蛋的超能力"
         )
         reply_request = ReplyMessageRequest(
             replyToken=event.reply_token,
@@ -887,7 +888,7 @@ def ask_groq(user_message, model, retries=3, backoff_factor=1.0):
                 openai_client = openai.ChatCompletion.create(
                     model="gpt-4o-mini",
                     messages=[
-                        {"role": "user", "content": "你是一個名叫狗蛋的助手，盡量只使用繁體中文精簡跟朋友的語氣的幽默回答, 約莫20字內，限制不超過50字，除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
+                        {"role": "user", "content": "你是一個名叫狗蛋的助手，盡量只使用繁體中文精簡跟朋友的語氣回答, 約莫50字內，限制不超過80字，除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
                         {"role": "user", "content": user_message}
                     ]
                 )
@@ -911,7 +912,7 @@ def ask_groq(user_message, model, retries=3, backoff_factor=1.0):
                 # Groq API，加入重試機制
                 chat_completion = client.chat.completions.create(
                     messages=[
-                        {"role": "system", "content": "你是一個名叫狗蛋的助手，跟使用者是朋友關係, 盡量只使用繁體中文方式進行幽默回答, 約莫20字內，限制不超過50字, 除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
+                        {"role": "system", "content": "你是一個名叫狗蛋的助手，跟使用者是朋友關係, 盡量只使用繁體中文方式進行回答, 約莫50字內，限制不超過80字, 除非當請求為翻譯時, 全部內容都需要完成翻譯不殘留原語言。"},
                         {"role": "user", "content": user_message},
                     ],
                     model=model.lower(),
@@ -1135,7 +1136,7 @@ def google_search(query):
 def search_person_info(name):
     """使用 AI 生成人物簡介，並搭配 Google 圖片搜尋"""
     # 透過 AI 生成簡單描述
-    prompt = f"請用簡單的方式介紹 {name} 是誰，並以 2-3 句話概述。"
+    prompt = f"請用簡單的方式介紹 {name} 是誰，並以 3-4 句話概述。"
     response_text = ask_groq(prompt, "deepseek-r1-distill-llama-70b")  # 調用 AI 來回答
 
     # 進行 Google 圖片搜尋
@@ -1357,7 +1358,7 @@ def get_weather_forecast(city):
         # 讓 AI 進行天氣分析
         ai_analysis = analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed)
 
-        return f"🌍 {forecast_text}\n\n🧑‍🔬 狗蛋關心您：\n{ai_analysis}"
+        return f"{forecast_text}\n\n🧑‍🔬 狗蛋關心您：\n{ai_analysis}"
 
     except requests.exceptions.RequestException as e:
         return f"❌ 取得天氣資料失敗: {e}"
