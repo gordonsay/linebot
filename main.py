@@ -1,4 +1,4 @@
-import os, re, json, openai, random, time, requests, shutil
+import os, re, json, openai, random, time, requests, shutil, datetime
 from pydub import AudioSegment
 from flask import Flask, request, jsonify
 from linebot.exceptions import InvalidSignatureError
@@ -341,7 +341,7 @@ def handle_message(event):
             "6. 狗蛋搜圖: 即時搜圖\n"
             "7. 狗蛋唱歌: 串連Spotify試聽\n"
             "8. 狗蛋氣象: 確認當前天氣\n"
-            "9. 狗蛋情勒: 狗蛋的超能力\n"
+            "9. 狗蛋情勒: 狗蛋的超能力"
         )
         reply_request = ReplyMessageRequest(
             replyToken=event.reply_token,
@@ -414,7 +414,6 @@ def handle_message(event):
         # 直接傳入 event.reply_token，而不是 user id
         handle_generate_image_command(event.reply_token, prompt, messaging_api)
         return
-
 
     # (4-b) 「當前模型」指令
     if "模型" in user_message and "當前" in user_message:
@@ -553,7 +552,7 @@ def handle_message(event):
         if city:
             weather_info = get_weather_weatherapi(city)
         else:
-            weather_info = "❌ 請輸入有效的城市名稱（例如：台北氣象、高雄氣象）"
+            weather_info = "❌ 請輸入有效的城市名稱, 包含行政區（例如：竹北市、東勢鄉）"
 
         reply_request = ReplyMessageRequest(
             replyToken=event.reply_token,
@@ -561,6 +560,23 @@ def handle_message(event):
         )
         send_response(event, reply_request)
         return
+    
+    # (4-j)狗蛋預報
+    if "狗蛋" in user_message and "預報" in user_message:
+        city = user_message.replace("狗蛋預報", "").strip()
+        
+        if city:
+            weather_info = get_weather_forecast(city)
+        else:
+            weather_info = "❌ 請輸入有效的城市名稱, 包含行政區（例如：竹北市、東勢鄉）"
+
+        reply_request = ReplyMessageRequest(
+            replyToken=event.reply_token,
+            messages=[TextMessage(text=f"{weather_info}")]
+        )
+        send_response(event, reply_request)
+        return
+
 
     # (5) 若在群組中且訊息中不包含「狗蛋」，則不觸發 AI 回應
     if event.source.type == "group" and "狗蛋" not in user_message:
@@ -1147,7 +1163,11 @@ def create_flex_message(text, image_url):
             "url": image_url,
             "size": "xl",
             "aspectRatio": "1:1",
-            "aspectMode": "fit"
+            "aspectMode": "fit",
+            "action": {  # ✅ 新增點擊圖片後放大
+                "type": "uri",
+                "uri": image_url
+            }
         },
         "body": {
             "type": "box",
@@ -1270,6 +1290,74 @@ def get_weather_weatherapi(city):
 
         return f"🌍 {city} 即時天氣預報：\n{weather_text}\n\n🧑‍🔬 狗蛋關心您：\n{ai_analysis}"
 
+
+    except requests.exceptions.RequestException as e:
+        return f"❌ 取得天氣資料失敗: {e}"
+
+def get_weather_forecast(city):
+    """ 使用 OpenWeather API 查詢未來 3 天天氣趨勢 """
+    # 確保 city 是 OpenWeather 可接受的名稱
+    city = CITY_MAPPING.get(city, city)
+    url = f"https://api.openweathermap.org/data/2.5/forecast?q={city}&appid={OPENWEATHER_API_KEY}&units=metric&lang=zh_tw"
+    
+
+    try:
+        response = requests.get(url)
+        data = response.json()
+        print("🔍 狀態碼:", response.status_code)
+        print("🔍 回應內容:", response.text)
+
+        if data.get("cod") != "200":
+            print(f"❌ OpenWeather API 錯誤: {data}")
+            return "❌ 無法取得天氣預報，請確認城市名稱是否正確"
+
+        daily_forecast = {}
+
+        # 解析 5 天的 3 小時預測，整理成每日的天氣趨勢
+        for forecast in data["list"]:
+            date = forecast["dt_txt"].split(" ")[0]  # 只取日期
+            temp = forecast["main"]["temp"]
+            weather_desc = forecast["weather"][0]["description"]
+            wind_speed = forecast["wind"]["speed"]
+            humidity = forecast["main"]["humidity"]
+
+            if date not in daily_forecast:
+                daily_forecast[date] = {
+                    "temp_min": temp,
+                    "temp_max": temp,
+                    "humidity": [],
+                    "wind_speed": [],
+                    "weather_desc": weather_desc
+                }
+            else:
+                daily_forecast[date]["temp_min"] = min(daily_forecast[date]["temp_min"], temp)
+                daily_forecast[date]["temp_max"] = max(daily_forecast[date]["temp_max"], temp)
+                daily_forecast[date]["humidity"].append(humidity)
+                daily_forecast[date]["wind_speed"].append(wind_speed)
+
+        # 格式化輸出未來 3 天預測
+        forecast_text = f"🌍 {city} 未來 3 天天氣趨勢：\n"
+        today = datetime.date.today()
+        count = 0
+
+        for date, info in daily_forecast.items():
+            if count >= 3:
+                break
+            avg_humidity = sum(info["humidity"]) // len(info["humidity"]) if info["humidity"] else 0
+            avg_wind_speed = sum(info["wind_speed"]) / len(info["wind_speed"]) if info["wind_speed"] else 0
+            forecast_text += (
+                f"\n📅 {date}:\n"
+                f"🌡 溫度: {info['temp_min']}°C ~ {info['temp_max']}°C\n"
+                f"💧 濕度: {avg_humidity}%\n"
+                f"💨 風速: {avg_wind_speed:.1f} m/s\n"
+                f"🌤 天氣: {info['weather_desc']}\n"
+            )
+            count += 1
+
+        # 讓 AI 進行天氣分析
+        ai_analysis = analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed)
+
+        return f"🌍 {forecast_text}\n\n🧑‍🔬 狗蛋關心您：\n{ai_analysis}"
 
     except requests.exceptions.RequestException as e:
         return f"❌ 取得天氣資料失敗: {e}"
