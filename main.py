@@ -612,7 +612,7 @@ def handle_message(event):
                         messages=[TextMessage(text=response_text)]
                     )
                 else:
-                    print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
+                    # print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
                     reply_request = ReplyMessageRequest(
                         reply_token=event.reply_token,
                         messages=[flex_message]
@@ -643,7 +643,7 @@ def handle_message(event):
                     messages=[TextMessage(text=response_text)]
                 )
             else:
-                print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
+                # print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
                 reply_request = ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[flex_message]
@@ -1624,7 +1624,7 @@ def create_flex_jable_message(videos):
         "contents": contents
     }
 
-    print(f"✅ [DEBUG] 最終 FlexMessage 結構: {json.dumps(flex_message_content, indent=2)}")  # Debug
+    # print(f"✅ [DEBUG] 最終 FlexMessage 結構: {json.dumps(flex_message_content, indent=2)}")  # Debug
 
     # ✅ **轉換為 JSON 字串，讓 `FlexContainer.from_json()` 可以解析**
     flex_json_str = json.dumps(flex_message_content)
