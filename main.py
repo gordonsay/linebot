@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 # Load Environment Arguments
 load_dotenv()
@@ -1468,32 +1469,49 @@ def get_video_data(search_query):
     url = f"https://jable.tv/search/{search_query}/"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         context = browser.new_context()
         page = context.new_page()
 
-        # 瀏覽搜尋頁面
+        # 啟用 Stealth 模式
+        stealth_sync(page)
+
+        # 設定 User-Agent 避免偵測
+        page.set_extra_http_headers({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+        })
+
+        # **打開搜尋頁面**
         page.goto(url, timeout=60000)
+        page.wait_for_load_state("networkidle")  # 等待 AJAX 完全載入
 
-        # 等待排序按鈕出現
-        page.wait_for_selector("a[data-action='ajax']")
+        # **滾動頁面以觸發懶加載**
+        for _ in range(5):  # 滾動多次確保內容載入
+            page.mouse.wheel(0, 1000)
+            time.sleep(1)
 
-        # 選擇「最近更新」按鈕
+        # **等待排序按鈕出現**
+        page.wait_for_selector("a[data-action='ajax']", timeout=10000)
+
+        # **選擇「最近更新」按鈕**
         sort_buttons = page.query_selector_all("a[data-action='ajax']")
         recent_update_button = None
         for button in sort_buttons:
-            if "最近更新" in button.inner_text():
+            if "最近更新" in button.text_content():
                 recent_update_button = button
                 break
 
         if recent_update_button:
             recent_update_button.click()
-            page.wait_for_timeout(1000)  # 等待切換動畫結束
+            page.wait_for_load_state("networkidle")  # 確保 AJAX 內容載入
         else:
             print("找不到『最近更新』按鈕")
             return []
 
-        # 關閉彈窗（如果存在）
+        # **關閉彈窗**
         try:
             close_button = page.wait_for_selector(".asg-interstitial__btn.asg-interstitial__btn_large", timeout=5000)
             close_button.click()
@@ -1501,10 +1519,15 @@ def get_video_data(search_query):
         except:
             print("找不到彈窗關閉按鈕，或彈窗未出現。")
 
-        # 等待新內容載入
-        page.wait_for_selector(".video-img-box")
+        # **等待新內容載入**
+        page.wait_for_selector(".video-img-box", timeout=10000)
 
-        # 抓取影片資訊
+        # **滾動頁面讓圖片載入**
+        for _ in range(3):
+            page.mouse.wheel(0, 1000)
+            time.sleep(1)
+
+        # **提取影片資訊**
         video_list = []
         videos = page.query_selector_all('.video-img-box')
 
@@ -1512,9 +1535,9 @@ def get_video_data(search_query):
             title_elem = video.query_selector('.title a')
             img_elem = video.query_selector('.img-box img')
 
-            title = title_elem.inner_text().strip() if title_elem else "N/A"
+            title = title_elem.text_content().strip() if title_elem else "N/A"
             link = title_elem.get_attribute('href') if title_elem else "N/A"
-            thumbnail = img_elem.get_attribute('src') if img_elem else "N/A"
+            thumbnail = img_elem.get_attribute('data-src') or img_elem.get_attribute('src') if img_elem else "N/A"
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
@@ -1526,26 +1549,34 @@ def get_video_data_hotest():
     video_list = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,  # ✅ 確保不開啟瀏覽器
+            args=["--headless=new", "--no-sandbox", "--disable-dev-shm-usage"]
+        )
         context = browser.new_context()
         page = context.new_page()
 
-        # 瀏覽目標網頁
-        page.goto(url)
+        # ✅ 啟用 Stealth 模式
+        stealth_sync(page)
 
-        # 處理可能出現的彈窗
-        try:
-            # 等待並關閉特定的彈窗按鈕
-            close_button = page.wait_for_selector(".asg-interstitial__btn.asg-interstitial__btn_large", timeout=3000)
-            close_button.click()
-            print("彈窗已關閉。")
-        except:
-            print("找不到彈窗關閉按鈕，或彈窗未出現。")
+        # ✅ 設定 User-Agent
+        page.set_extra_http_headers({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+        })
 
-        # 等待影片元素加載
-        page.wait_for_selector(".video-img-box")
+        # ✅ 打開目標頁面
+        page.goto(url, timeout=60000)
+        page.wait_for_load_state("networkidle")  # 確保 AJAX 內容載入
 
-        # 提取影片資訊
+        # ✅ 滾動頁面觸發懶加載
+        for _ in range(5):
+            page.mouse.wheel(0, 1000)
+            time.sleep(1)
+
+        # ✅ 等待影片元素載入
+        page.wait_for_selector(".video-img-box", timeout=60000)
+
+        # ✅ 抓取影片資訊
         videos = page.query_selector_all('.video-img-box')
         for video in videos[:3]:  # 取前三個影片
             title_elem = video.query_selector('.title a')
@@ -1553,7 +1584,9 @@ def get_video_data_hotest():
 
             title = title_elem.inner_text().strip() if title_elem else "N/A"
             link = title_elem.get_attribute('href') if title_elem else "N/A"
-            thumbnail = img_elem.get_attribute('src') if img_elem else "N/A"
+
+            # ✅ 優先使用 `data-src` 避免黑色圖片
+            thumbnail = img_elem.get_attribute('data-src') or img_elem.get_attribute('src') if img_elem else "N/A"
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
