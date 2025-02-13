@@ -30,4 +30,4 @@ if [ ! -d ~/.cache/playwright ]; then
 fi
 
 # 啟動應用程式
-python your_app.py  # 或 gunicorn, uwsgi 等
+python main.py  # 或 gunicorn, uwsgi 等
