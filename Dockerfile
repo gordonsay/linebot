@@ -15,9 +15,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 只安裝 Playwright 的 Chromium（不裝 Firefox）
-RUN pip install --no-cache-dir playwright
-RUN playwright install chromium
+RUN apt-get update && apt-get install -y ffmpeg
+
+
+# 安裝 Playwright 依賴
+RUN python -m playwright install --with-deps
 
 # 複製應用程式
 COPY . .
