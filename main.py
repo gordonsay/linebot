@@ -1466,61 +1466,33 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
     return content
 
 def get_video_data(search_query):
-    url = f"https://jable.tv/search/{search_query}/"
+    # **直接修改 URL，讓搜尋結果按「最近更新」排序**
+    url = f"https://jable.tv/search/{search_query}/?sort_by=post_date"
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
-            headless=True,
+            headless=True,  # ⚠️ 部署時設為 True
             args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
         context = browser.new_context()
         page = context.new_page()
 
-        # 啟用 Stealth 模式
+        # **啟用 Stealth 模式**
         stealth_sync(page)
 
-        # 設定 User-Agent 避免偵測
+        # **設定 User-Agent 避免偵測**
         page.set_extra_http_headers({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
         })
 
-        # **打開搜尋頁面**
+        # **打開修改後的搜尋頁面**
         page.goto(url, timeout=60000)
-        page.wait_for_load_state("networkidle")  # 等待 AJAX 完全載入
+        page.wait_for_load_state("networkidle")  # **等待 AJAX 完全載入**
+        print("✅ 搜尋頁面載入完成（已按最新更新排序）")
 
-        # **滾動頁面以觸發懶加載**
-        for _ in range(5):  # 滾動多次確保內容載入
-            page.mouse.wheel(0, 1000)
-            time.sleep(1)
-
-        # **等待排序按鈕出現**
-        page.wait_for_selector("a[data-action='ajax']", timeout=10000)
-
-        # **選擇「最近更新」按鈕**
-        sort_buttons = page.query_selector_all("a[data-action='ajax']")
-        recent_update_button = None
-        for button in sort_buttons:
-            if "最近更新" in button.text_content():
-                recent_update_button = button
-                break
-
-        if recent_update_button:
-            recent_update_button.click()
-            page.wait_for_load_state("networkidle")  # 確保 AJAX 內容載入
-        else:
-            print("找不到『最近更新』按鈕")
-            return []
-
-        # **關閉彈窗**
-        try:
-            close_button = page.wait_for_selector(".asg-interstitial__btn.asg-interstitial__btn_large", timeout=5000)
-            close_button.click()
-            print("彈窗已關閉。")
-        except:
-            print("找不到彈窗關閉按鈕，或彈窗未出現。")
-
-        # **等待新內容載入**
+        # **等待影片列表加載**
         page.wait_for_selector(".video-img-box", timeout=10000)
+        print("✅ 影片內容已加載")
 
         # **滾動頁面讓圖片載入**
         for _ in range(3):
@@ -1543,7 +1515,7 @@ def get_video_data(search_query):
 
         browser.close()
         return video_list
-
+    
 def get_video_data_hotest():
     url = "https://jable.tv/hot/"
     video_list = []
