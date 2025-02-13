@@ -1478,7 +1478,7 @@ def get_video_data(search_query):
     options.add_argument("--disable-dev-shm-usage")
     
     # 指定 Chrome 二进制文件路径
-    options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/usr/bin/google-chrome-stable"
+    options.binary_location = "/usr/bin/google-chrome-stable"
 
     # 使用 WebDriver Manager 自动下载 ChromeDriver
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
@@ -1574,7 +1574,7 @@ def get_video_data_hotest():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--headless")
     # 指定 Chrome 二进制文件路径
-    options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/usr/bin/google-chrome-stable"
+    options.binary_location = "/usr/bin/google-chrome-stable"
 
     # 使用 WebDriver Manager 自动下载 ChromeDriver
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
