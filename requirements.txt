@@ -69,3 +69,5 @@ websockets==14.2
 yarl==1.18.3
 zipp==1.0.0
 beautifulsoup4==4.13.3
+playwright-stealth
+
