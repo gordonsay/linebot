@@ -581,11 +581,11 @@ def handle_message(event):
         return
 
     # (4-j)「精密搜尋」
-    if ("精密搜尋") in user_message and ("最熱") not in user_message:
-        search_query = user_message.replace("精密搜尋", "").strip()
+    if ("狗蛋開車") in user_message and ("最熱") not in user_message:
+        search_query = user_message.replace("狗蛋開車", "").strip()
         
         if not search_query:
-            response_text = "請提供人名，例如：精密搜尋 狗蛋"
+            response_text = "請提供人名，例如：狗蛋開車 狗蛋"
             reply_request = ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[TextMessage(text=response_text)]
@@ -621,7 +621,7 @@ def handle_message(event):
         return  
 
     # (4-k)「精密搜尋最熱」
-    if ("精密搜尋") in user_message and ("最熱") in user_message:
+    if ("狗蛋開車") in user_message and ("最熱") in user_message:
         videos = get_video_data_hotest()  # ✅ 爬取影片
         print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
             
