@@ -69,3 +69,6 @@ websocket-client==1.8.0
 websockets==14.2
 yarl==1.18.3
 zipp==1.0.0
+selenium==4.28.1
+webdriver-manager==4.0.2
+beautifulsoup4==4.13.3
