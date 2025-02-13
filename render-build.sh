@@ -24,5 +24,11 @@ else
     echo "使用缓存中的 Google Chrome。"
 fi
 
+# 确保当前路径包含 requirements.txt
+if [[ ! -f "requirements.txt" ]]; then
+    echo "ERROR: requirements.txt not found! Exiting..."
+    exit 1
+fi
+
 # 安装 Python 依赖
 pip install -r requirements.txt
