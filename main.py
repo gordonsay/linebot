@@ -16,6 +16,10 @@ from bs4 import BeautifulSoup
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import undetected_chromedriver as uc
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -1469,11 +1473,15 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
 
 def get_video_data(search_query):
     url = f"https://jable.tv/search/{search_query}/"
-    options = uc.ChromeOptions()
+    options = Options()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     
-    driver = uc.Chrome(options=options)
+    # 指定 Chrome 二进制文件路径
+    options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/usr/bin/google-chrome-stable"
+
+    # 使用 WebDriver Manager 自动下载 ChromeDriver
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.get(url)
     try:
         # **找到所有排序按鈕**
@@ -1561,11 +1569,15 @@ def get_video_data(search_query):
 
 def get_video_data_hotest():
     url = "https://jable.tv/hot/"
-    options = uc.ChromeOptions()
+    options = Options()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    
-    driver = uc.Chrome(options=options)
+    options.add_argument("--headless")
+    # 指定 Chrome 二进制文件路径
+    options.binary_location = "/opt/render/project/.render/chrome/opt/google/chrome/usr/bin/google-chrome-stable"
+
+    # 使用 WebDriver Manager 自动下载 ChromeDriver
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.get(url)
     try:
         # **關閉彈窗**
