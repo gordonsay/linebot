@@ -592,7 +592,7 @@ def handle_message(event):
             )
         else:
             videos = get_video_data(search_query)  # ✅ 爬取影片
-            print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
+            # print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
             
             if not videos:
                 print("❌ [DEBUG] 爬取結果為空，回傳純文字訊息")
@@ -1486,16 +1486,16 @@ def get_video_data(search_query):
         })
 
         # **打開修改後的搜尋頁面**
-        page.goto(url, timeout=60000)
+        page.goto(url, timeout=20000)
         page.wait_for_load_state("networkidle")  # **等待 AJAX 完全載入**
         print("✅ 搜尋頁面載入完成（已按最新更新排序）")
 
         # **等待影片列表加載**
-        page.wait_for_selector(".video-img-box", timeout=10000)
+        page.wait_for_selector(".video-img-box", timeout=5000)
         print("✅ 影片內容已加載")
 
         # **滾動頁面讓圖片載入**
-        for _ in range(3):
+        for _ in range(1):
             page.mouse.wheel(0, 1000)
             time.sleep(1)
 
@@ -1519,9 +1519,6 @@ def get_video_data(search_query):
 def get_video_data_hotest():
     url = "https://jable.tv/hot/"
     video_list = []
-    print("收到請求！")
-    print("收到請求！")
-    print("收到請求！")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -1540,16 +1537,16 @@ def get_video_data_hotest():
         })
 
         # ✅ 打開目標頁面
-        page.goto(url, timeout=60000)
+        page.goto(url, timeout=20000)
         page.wait_for_load_state("networkidle")  # 確保 AJAX 內容載入
 
         # ✅ 滾動頁面觸發懶加載
-        for _ in range(5):
+        for _ in range(1):
             page.mouse.wheel(0, 1000)
             time.sleep(1)
 
         # ✅ 等待影片元素載入
-        page.wait_for_selector(".video-img-box", timeout=60000)
+        page.wait_for_selector(".video-img-box", timeout=5000)
 
         # ✅ 抓取影片資訊
         videos = page.query_selector_all('.video-img-box')
