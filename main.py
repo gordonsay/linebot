@@ -1519,6 +1519,9 @@ def get_video_data(search_query):
 def get_video_data_hotest():
     url = "https://jable.tv/hot/"
     video_list = []
+    print("收到請求！")
+    print("收到請求！")
+    print("收到請求！")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -1635,5 +1638,5 @@ def create_flex_jable_message(videos):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
-    app.run(host="0.0.0.0", port=port, debug=False)  # 移除 debug=True
+    app.run(host="0.0.0.0", port=port)  # 移除 debug=True
 
