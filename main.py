@@ -1569,15 +1569,13 @@ def get_video_data(search_query):
 
 def get_video_data_hotest():
     url = "https://jable.tv/hot/"
-    options = Options()
+    options = uc.ChromeOptions()
+    options.binary_location = "/usr/bin/google-chrome-stable"
+    driver = uc.Chrome(options=options)
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--headless")
-    # 指定 Chrome 二进制文件路径
-    options.binary_location = "/usr/bin/google-chrome-stable"
 
-    # 使用 WebDriver Manager 自动下载 ChromeDriver
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     driver.get(url)
     try:
         # **關閉彈窗**
@@ -1700,3 +1698,6 @@ def create_flex_jable_message(videos):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
     app.run(host="0.0.0.0", port=port, debug=False)  # 移除 debug=True
+    print("🔍 Available binaries in /usr/bin/:")
+    print(os.listdir("/usr/bin/"))
+
