@@ -31,4 +31,4 @@ ENV PORT 5000
 EXPOSE 5000
 
 # 以 Gunicorn 啟動 Flask 應用
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "main:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:${PORT}", "main:app"]
