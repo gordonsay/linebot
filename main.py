@@ -1472,6 +1472,7 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
     return content
 
 def get_video_data(search_query):
+    print(shutil.which("google-chrome"))
     url = f"https://jable.tv/search/{search_query}/"
     options = Options()
     options.add_argument("--no-sandbox")
@@ -1568,6 +1569,7 @@ def get_video_data(search_query):
         driver.quit()
 
 def get_video_data_hotest():
+    print(shutil.which("google-chrome"))
     url = "https://jable.tv/hot/"
     options = uc.ChromeOptions()
     options.binary_location = "/usr/bin/google-chrome-stable"
@@ -1700,4 +1702,5 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=port, debug=False)  # 移除 debug=True
     print("🔍 Available binaries in /usr/bin/:")
     print(os.listdir("/usr/bin/"))
+    print(shutil.which("google-chrome"))
 
