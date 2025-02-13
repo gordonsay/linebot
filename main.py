@@ -15,6 +15,10 @@ from types import SimpleNamespace
 from bs4 import BeautifulSoup
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Load Environment Arguments
 load_dotenv()
@@ -577,6 +581,77 @@ def handle_message(event):
         )
         send_response(event, reply_request)
         return
+
+    # (4-j)「精密搜尋」
+    if ("精密搜尋") in user_message and ("最熱") not in user_message:
+        search_query = user_message.replace("精密搜尋", "").strip()
+        
+        if not search_query:
+            response_text = "請提供人名，例如：精密搜尋 狗蛋"
+            reply_request = ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=response_text)]
+            )
+        else:
+            videos = get_video_data(search_query)  # ✅ 爬取影片
+            print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
+            
+            if not videos:
+                print("❌ [DEBUG] 爬取結果為空，回傳純文字訊息")
+                response_text = "找不到相關影片。"
+                reply_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response_text)]
+                )
+            else:
+                flex_message = create_flex_jable_message(videos)  # ✅ 生成 FlexMessage
+                
+                if flex_message is None:  # **確保 flex_message 不為 None**
+                    print("❌ [DEBUG] FlexMessage 生成失敗，回傳純文字")
+                    response_text = "找不到相關影片。"
+                    reply_request = ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[TextMessage(text=response_text)]
+                    )
+                else:
+                    print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
+                    reply_request = ReplyMessageRequest(
+                        reply_token=event.reply_token,
+                        messages=[flex_message]
+                    )
+        send_response(event, reply_request)  
+        return  
+
+    # (4-k)「精密搜尋最熱」
+    if ("精密搜尋") in user_message and ("最熱") in user_message:
+        videos = get_video_data_hotest()  # ✅ 爬取影片
+        print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
+            
+        if not videos:
+            print("❌ [DEBUG] 爬取結果為空，回傳純文字訊息")
+            response_text = "找不到相關影片。"
+            reply_request = ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=response_text)]
+            )
+        else:
+            flex_message = create_flex_jable_message(videos)  # ✅ 生成 FlexMessage
+                
+            if flex_message is None:  # **確保 flex_message 不為 None**
+                print("❌ [DEBUG] FlexMessage 生成失敗，回傳純文字")
+                response_text = "找不到相關影片。"
+                reply_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response_text)]
+                )
+            else:
+                print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
+                reply_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[flex_message]
+                )
+        send_response(event, reply_request)  
+        return  
 
 
     # (5) 若在群組中且訊息中不包含「狗蛋」，則不觸發 AI 回應
@@ -1391,6 +1466,224 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
     content = chat_completion.choices[0].message.content.strip()
     content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
     return content
+
+def get_video_data(search_query):
+    url = f"https://jable.tv/search/{search_query}/"
+    options = uc.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    driver = uc.Chrome(options=options)
+    driver.get(url)
+    try:
+        # **找到所有排序按鈕**
+        sort_buttons = WebDriverWait(driver, 5).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[data-action='ajax']"))
+        )
+
+        # **遍歷所有排序按鈕，找到"最近更新"**
+        for button in sort_buttons:
+            if "最近更新" in button.text:
+                recent_update_button = button
+                break  # 找到按鈕後跳出迴圈
+        else:  # 如果迴圈沒有 break，表示沒有找到按鈕
+            raise Exception("找不到『最近更新』按鈕")
+        
+        # **點擊「最近更新」按鈕**
+        recent_update_button.click()
+
+        # **關閉彈窗**
+        try:
+            close_button = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".asg-interstitial__btn.asg-interstitial__btn_large")) # 使用你提供的選擇器
+            )
+            close_button.click()
+            print("彈窗已關閉。")
+        except:
+            print("找不到彈窗關閉按鈕。")
+            pass # 如果找不到關閉按鈕，則繼續執行
+
+
+        # **檢測是否有其他彈窗**
+        try:
+            popup_close_button = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), '關閉')]"))  # 請換成實際關閉按鈕的 XPath
+            )
+            popup_close_button.click()
+            print("其他彈窗已關閉。")
+            time.sleep(1)
+        except:
+            print("沒有其他彈窗，繼續執行。")
+
+        # **找到所有排序按鈕**
+        sort_buttons = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[data-action='ajax']"))
+        )
+        # **遍歷所有排序按鈕，找到"最近更新"**
+        for button in sort_buttons:
+            if "最近更新" in button.text:
+                recent_update_button = button
+                break  # 找到按鈕後跳出迴圈
+        else:  # 如果迴圈沒有 break，表示沒有找到按鈕
+            raise Exception("找不到『最近更新』按鈕")
+        
+        # **點擊「最近更新」按鈕**
+        recent_update_button.click()
+        time.sleep(1)  # 等待切換動畫結束
+
+        # **等待新內容載入 (使用更精確的等待條件)**
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".video-img-box:not(.loaded)")) # 等待.video-img-box class沒有 loaded
+        )
+
+        # **現在才抓取影片資訊**
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+        video_list = []
+        for video in soup.select('.video-img-box'):
+            title_elem = video.select_one('.title a')
+            img_elem = video.select_one('.img-box img')
+
+            title = title_elem.text.strip() if title_elem else "N/A"
+            link = title_elem['href'] if title_elem else "N/A"
+            thumbnail = img_elem['src'] if img_elem else "N/A"
+
+            video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
+
+        return video_list[:3]
+    
+    except Exception as e:
+        print(f"錯誤: {e}")
+        return []
+
+    finally:
+        driver.quit()
+
+def get_video_data_hotest():
+    url = "https://jable.tv/hot/"
+    options = uc.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    driver = uc.Chrome(options=options)
+    driver.get(url)
+    try:
+        # **關閉彈窗**
+        try:
+            close_button = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".asg-interstitial__btn.asg-interstitial__btn_large")) # 使用你提供的選擇器
+            )
+            close_button.click()
+            print("彈窗已關閉。")
+        except:
+            print("找不到彈窗關閉按鈕。")
+            pass # 如果找不到關閉按鈕，則繼續執行
+
+        # **檢測是否有其他彈窗**
+        try:
+            popup_close_button = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), '關閉')]"))  # 請換成實際關閉按鈕的 XPath
+            )
+            popup_close_button.click()
+            print("其他彈窗已關閉。")
+            time.sleep(1)
+        except:
+            print("沒有其他彈窗，繼續執行。")
+
+        # **等待新內容載入 (使用更精確的等待條件)**
+        WebDriverWait(driver, 5).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".video-img-box:not(.loaded)")) # 等待.video-img-box class沒有 loaded
+        )
+
+        # **現在才抓取影片資訊**
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+        video_list = []
+        for video in soup.select('.video-img-box'):
+            title_elem = video.select_one('.title a')
+            img_elem = video.select_one('.img-box img')
+
+            title = title_elem.text.strip() if title_elem else "N/A"
+            link = title_elem['href'] if title_elem else "N/A"
+            thumbnail = img_elem['src'] if img_elem else "N/A"
+
+            video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
+
+        return video_list[:3]
+    
+    except Exception as e:
+        print(f"錯誤: {e}")
+        return []
+
+    finally:
+        driver.quit()
+
+def create_flex_jable_message(videos):
+    if not videos:
+        return TextMessage(text="找不到相關影片，請嘗試其他關鍵字。")
+
+    contents = []
+    for video in videos:
+        print(f"✅ [DEBUG] 準備加入影片: {video}")  # Debug 確認資料格式
+
+        bubble = {
+            "type": "bubble",
+            "hero": {
+                "type": "image",
+                "url": video["thumbnail"],
+                "size": "full",
+                "aspectRatio": "16:9",
+                "aspectMode": "cover",
+                "action": {
+                    "type": "uri",
+                    "uri": video["link"]
+                }
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": video["title"],
+                        "weight": "bold",
+                        "size": "md",
+                        "wrap": True
+                    }
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "sm",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "action": {
+                            "type": "uri",
+                            "label": "觀看影片",
+                            "uri": video["link"]
+                        }
+                    }
+                ]
+            }
+        }
+        contents.append(bubble)
+
+    flex_message_content = {
+        "type": "carousel",
+        "contents": contents
+    }
+
+    print(f"✅ [DEBUG] 最終 FlexMessage 結構: {json.dumps(flex_message_content, indent=2)}")  # Debug
+
+    # ✅ **轉換為 JSON 字串，讓 `FlexContainer.from_json()` 可以解析**
+    flex_json_str = json.dumps(flex_message_content)
+
+    flex_contents = FlexContainer.from_json(flex_json_str)  # ✅ 解析 JSON 字串
+    return FlexMessage(alt_text="搜尋結果", contents=flex_contents)
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
