@@ -1,23 +1,21 @@
-# 使用官方的 Playwright 基础镜像
-FROM mcr.microsoft.com/playwright/python:v1.50.0-focal
+# 使用官方 Playwright Python 版本（使用 bullseye-slim 以減少體積）
+FROM mcr.microsoft.com/playwright/python:latest
 
-# 设置工作目录
+# 設置工作目錄
 WORKDIR /app
 
-# 复制项目文件到容器中
-COPY . /app/
-
-# 安装 Python 依赖项
+# 複製依賴文件並安裝
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 设置环境变量以指定浏览器的安装路径
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-
-# 安装 Playwright 浏览器及其依赖项
+# 安裝 Playwright 瀏覽器依賴
 RUN playwright install --with-deps
 
-# 暴露应用程序运行的端口（如果适用）
+# 複製所有程式碼
+COPY . .
+
+# 暴露應用程序的端口（根據你的 Flask 或 FastAPI 設定）
 EXPOSE 8000
 
-# 运行应用程序
-CMD ["python", "main.py"]
+# 啟動應用
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "main:app"]
