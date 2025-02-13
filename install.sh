@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 发生错误时立即退出
+# 在发生错误时立即退出
 set -o errexit
 
 # 安装 Python 依赖
