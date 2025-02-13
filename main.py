@@ -1637,6 +1637,6 @@ def create_flex_jable_message(videos):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
-    app.run(host="0.0.0.0", port=port)  # 移除 debug=True
+    PORT = int(os.environ.get("PORT", 5000))  # 使用 Render 提供的 PORT
+    app.run(host="0.0.0.0", port=PORT)  # 移除 debug=True
 
