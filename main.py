@@ -23,6 +23,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright
 
 # Load Environment Arguments
 load_dotenv()
@@ -1569,66 +1570,45 @@ def get_video_data(search_query):
         driver.quit()
 
 def get_video_data_hotest():
-    print(shutil.which("google-chrome"))
     url = "https://jable.tv/hot/"
-    options = uc.ChromeOptions()
-    options.binary_location = "/usr/bin/google-chrome-stable"
-    driver = uc.Chrome(options=options)
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--headless")
+    video_list = []
 
-    driver.get(url)
-    try:
-        # **關閉彈窗**
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+
+        # 瀏覽目標網頁
+        page.goto(url)
+
+        # 處理可能出現的彈窗
         try:
-            close_button = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, ".asg-interstitial__btn.asg-interstitial__btn_large")) # 使用你提供的選擇器
-            )
+            # 等待並關閉特定的彈窗按鈕
+            close_button = page.wait_for_selector(".asg-interstitial__btn.asg-interstitial__btn_large", timeout=3000)
             close_button.click()
             print("彈窗已關閉。")
         except:
-            print("找不到彈窗關閉按鈕。")
-            pass # 如果找不到關閉按鈕，則繼續執行
+            print("找不到彈窗關閉按鈕，或彈窗未出現。")
 
-        # **檢測是否有其他彈窗**
-        try:
-            popup_close_button = WebDriverWait(driver, 3).until(
-                EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), '關閉')]"))  # 請換成實際關閉按鈕的 XPath
-            )
-            popup_close_button.click()
-            print("其他彈窗已關閉。")
-            time.sleep(1)
-        except:
-            print("沒有其他彈窗，繼續執行。")
+        # 等待影片元素加載
+        page.wait_for_selector(".video-img-box")
 
-        # **等待新內容載入 (使用更精確的等待條件)**
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".video-img-box:not(.loaded)")) # 等待.video-img-box class沒有 loaded
-        )
+        # 提取影片資訊
+        videos = page.query_selector_all('.video-img-box')
+        for video in videos[:3]:  # 取前三個影片
+            title_elem = video.query_selector('.title a')
+            img_elem = video.query_selector('.img-box img')
 
-        # **現在才抓取影片資訊**
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-        video_list = []
-        for video in soup.select('.video-img-box'):
-            title_elem = video.select_one('.title a')
-            img_elem = video.select_one('.img-box img')
-
-            title = title_elem.text.strip() if title_elem else "N/A"
-            link = title_elem['href'] if title_elem else "N/A"
-            thumbnail = img_elem['src'] if img_elem else "N/A"
+            title = title_elem.inner_text().strip() if title_elem else "N/A"
+            link = title_elem.get_attribute('href') if title_elem else "N/A"
+            thumbnail = img_elem.get_attribute('src') if img_elem else "N/A"
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
-        return video_list[:3]
-    
-    except Exception as e:
-        print(f"錯誤: {e}")
-        return []
+        browser.close()
 
-    finally:
-        driver.quit()
+    return video_list
+
 
 def create_flex_jable_message(videos):
     if not videos:
