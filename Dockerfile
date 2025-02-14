@@ -8,18 +8,16 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     curl wget unzip libnss3 libatk1.0-0 libxcomposite1 \
     libxrandr2 libxdamage1 libxkbcommon0 libasound2 \
-    libpangocairo-1.0-0 \
+    libpangocairo-1.0-0 ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 複製依賴文件並安裝
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN apt-get install -y ffmpeg
 
-
-# 安裝 Playwright 依賴
-RUN python -m playwright install --with-deps
+# 安裝 Playwright（僅安裝 Chromium，減少錯誤機率）
+RUN python -m playwright install chromium --with-deps
 
 # 複製應用程式
 COPY . .
