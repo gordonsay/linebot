@@ -28,4 +28,5 @@ ENV PORT 5000
 EXPOSE 5000
 
 # 使用 Uvicorn 啟動 Flask 應用
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:5000", "main:app"]
+
