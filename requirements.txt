@@ -72,5 +72,5 @@ beautifulsoup4==4.13.3
 playwright
 playwright-stealth
 cloudscraper
-
+uvicorn
 
