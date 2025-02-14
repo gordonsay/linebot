@@ -1498,9 +1498,9 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
     return content
 
 def get_video_data(search_query):
-    url = f"https://jable.tv/search/{search_query}/"
+    url = f"https://jable.tv/search/{search_query}/?sort_by=post_date"
 
-    # ✅ 使用 `cloudscraper` 先嘗試多次
+    # ✅ 使用 `cloudscraper` 嘗試多次
     scraper = cloudscraper.create_scraper(
         browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
     )
@@ -1510,9 +1510,9 @@ def get_video_data(search_query):
             try:
                 response = scraper.get(url, timeout=10)
                 if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
-                    return response.text  # ✅ 成功獲取 HTML
+                    return response.text  # ✅ 成功
                 print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.1)  # ✅ 等待 0.1 秒後重試
+                time.sleep(0.1)  # ✅ 等待 0.5 秒後重試
             except Exception as e:
                 print(f"❌ 錯誤：{e}")
         return None  # 🚨 3 次都失敗，回傳 None
@@ -1539,54 +1539,8 @@ def get_video_data(search_query):
             ]
             page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
 
-            # ✅ 進入頁面
             page.goto(url, timeout=50000)
             page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載
-
-            # ✅ **找到所有排序按鈕，點擊「最近更新」**
-            try:
-                sort_buttons = page.query_selector_all("a[data-action='ajax']")
-                for button in sort_buttons:
-                    if "最近更新" in button.inner_text():
-                        button.click()
-                        print("✅ 點擊『最近更新』按鈕")
-                        time.sleep(2)  # **等待內容切換**
-                        break
-            except:
-                print("❌ 找不到『最近更新』按鈕")
-
-            # ✅ **關閉彈窗**
-            try:
-                close_button = page.query_selector(".asg-interstitial__btn.asg-interstitial__btn_large")
-                if close_button:
-                    close_button.click()
-                    print("✅ 彈窗已關閉")
-            except:
-                print("⚠️ 沒有找到彈窗")
-
-            # ✅ **檢測是否有其他彈窗**
-            try:
-                popup_close_button = page.query_selector("button:has-text('關閉')")
-                if popup_close_button:
-                    popup_close_button.click()
-                    print("✅ 其他彈窗已關閉")
-            except:
-                print("⚠️ 沒有額外彈窗")
-
-            # ✅ **再點一次「最近更新」，確保最新內容**
-            try:
-                sort_buttons = page.query_selector_all("a[data-action='ajax']")
-                for button in sort_buttons:
-                    if "最近更新" in button.inner_text():
-                        button.click()
-                        print("✅ 再次點擊『最近更新』按鈕")
-                        time.sleep(2)  # **等待內容切換**
-                        break
-            except:
-                print("❌ 再次點擊『最近更新』失敗")
-
-            # ✅ **等待影片列表載入**
-            page.wait_for_selector(".video-img-box", timeout=10000)
 
             html = page.content()
             browser.close()
@@ -1605,7 +1559,7 @@ def get_video_data(search_query):
 
         # ✅ 確保 `.video-img-box` 存在
         try:
-            page.wait_for_selector(".video-img-box", timeout=10000)
+            # page.wait_for_selector(".video-img-box", timeout=10000)
             print("✅ 頁面載入完成")
         except:
             print("❌ 沒有找到影片")
@@ -1614,7 +1568,7 @@ def get_video_data(search_query):
         video_list = []
         videos = page.query_selector_all('.video-img-box')
 
-        for video in videos[:3]:  # **取前三個影片**
+        for video in videos[:3]:
             title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
 
             title = title_elem.text_content().strip() if title_elem else "N/A"
