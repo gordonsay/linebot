@@ -1512,7 +1512,7 @@ def get_video_data(search_query):
                 if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
                     return response.text  # ✅ 成功
                 print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.1)  # ✅ 等待 0.5 秒後重試
+                time.sleep(0.5)  # ✅ 等待 0.5 秒後重試
             except Exception as e:
                 print(f"❌ 錯誤：{e}")
         return None  # 🚨 3 次都失敗，回傳 None
@@ -1595,7 +1595,7 @@ def get_video_data_hotest():
                 if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
                     return response.text  # ✅ 成功獲取 HTML
                 print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.1)  # ✅ 等待 0.2 秒後重試
+                time.sleep(0.5)  # ✅ 等待 0.2 秒後重試
             except Exception as e:
                 print(f"❌ 錯誤：{e}")
         return None  # 🚨 3 次都失敗，回傳 None
@@ -1678,7 +1678,7 @@ def get_video_data_newest():
                 if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
                     return response.text  # ✅ 成功獲取 HTML
                 print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.1)  # ✅ 等待 0.2 秒後重試
+                time.sleep(0.5)  # ✅ 等待 0.2 秒後重試
             except Exception as e:
                 print(f"❌ 錯誤：{e}")
         return None  # 🚨 3 次都失敗，回傳 None
