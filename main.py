@@ -1500,75 +1500,42 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
 def get_video_data(search_query):
     url = f"https://jable.tv/search/{search_query}/?sort_by=post_date"
 
-    # ✅ 使用 `cloudscraper` 嘗試多次
-    scraper = cloudscraper.create_scraper(
-        browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
-    )
-
-    def get_html_with_retry(url, max_retries=3):
-        for i in range(max_retries):
-            try:
-                response = scraper.get(url, timeout=10)
-                if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
-                    return response.text  # ✅ 成功
-                print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.5)  # ✅ 等待 0.5 秒後重試
-            except Exception as e:
-                print(f"❌ 錯誤：{e}")
-        return None  # 🚨 3 次都失敗，回傳 None
-
-    html = get_html_with_retry(url)
-
-    # **如果 `cloudscraper` 失敗，改用 Playwright**
-    if html is None:
-        print("⚠️ Cloudscraper 失敗，改用 Playwright")
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = browser.new_context()
-            page = context.new_page()
-
-            stealth_sync(page)
-
-            # ✅ 隨機 User-Agent
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
-            ]
-            page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
-
-            page.goto(url, timeout=50000)
-            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載
-
-            html = page.content()
-            browser.close()
-
-    # **確保 HTML 內容不是 Cloudflare 防護頁**
-    if "Just a moment..." in html or "challenge-error-text" in html:
-        print("❌ Cloudflare 防護阻擋，無法獲取內容")
-        return []
-
-    # ✅ 解析 HTML
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,  # ✅ 關閉 headless=False，提升速度
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         context = browser.new_context()
         page = context.new_page()
-        page.set_content(html)
 
-        # ✅ 確保 `.video-img-box` 存在
-        try:
-            # page.wait_for_selector(".video-img-box", timeout=10000)
-            print("✅ 頁面載入完成")
-        except:
-            print("❌ 沒有找到影片")
+        # ✅ 避免被封鎖，使用 Stealth
+        stealth_sync(page)
+
+        # ✅ 隨機 User-Agent
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
+        ]
+        page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
+
+        # ✅ **減少 `timeout` 時間，提升速度**
+        page.goto(url, timeout=10000)  # **減少超時時間**
+        page.wait_for_selector(".video-img-box", timeout=3000)  # **減少等待時間**
+        
+        # ✅ **直接解析 HTML，不用 `set_content()`**
+        html = page.content()
+
+        # **確保 HTML 內容不是 Cloudflare 防護頁**
+        if "Just a moment..." in html or "challenge-error-text" in html:
+            print("❌ Cloudflare 防護阻擋，無法獲取內容")
+            browser.close()
             return []
 
-        video_list = []
+        # ✅ **直接解析 HTML**
         videos = page.query_selector_all('.video-img-box')
+        video_list = []
 
-        for video in videos[:3]:
+        for video in videos[:2]:  # **只取前 2 部影片**
             title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
 
             title = title_elem.text_content().strip() if title_elem else "N/A"
@@ -1577,80 +1544,38 @@ def get_video_data(search_query):
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
+        # ✅ **確保瀏覽器完全關閉**
         browser.close()
         return video_list
-    
+
 def get_video_data_hotest():
     url = "https://jable.tv/hot/"
-
-    # ✅ 使用 `cloudscraper` 嘗試繞過 Cloudflare
-    scraper = cloudscraper.create_scraper(
-        browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
-    )
-
-    def get_html_with_retry(url, max_retries=3):
-        for i in range(max_retries):
-            try:
-                response = scraper.get(url, timeout=10)
-                if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
-                    return response.text  # ✅ 成功獲取 HTML
-                print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.5)  # ✅ 等待 0.2 秒後重試
-            except Exception as e:
-                print(f"❌ 錯誤：{e}")
-        return None  # 🚨 3 次都失敗，回傳 None
-
-    html = get_html_with_retry(url)
-
-    # **如果 `cloudscraper` 失敗，改用 Playwright**
-    if html is None:
-        print("⚠️ Cloudscraper 失敗，改用 Playwright")
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = browser.new_context()
-            page = context.new_page()
-
-            stealth_sync(page)
-
-            # ✅ 隨機 User-Agent
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
-            ]
-            page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
-
-            page.goto(url, timeout=50000)
-            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載完成
-
-            html = page.content()
-            browser.close()
-
-    # **確保 HTML 內容不是 Cloudflare 防護頁**
-    if "Just a moment..." in html or "challenge-error-text" in html:
-        print("❌ Cloudflare 防護阻擋，無法獲取內容")
-        return []
-
-    # ✅ 使用 Playwright 解析 HTML
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         context = browser.new_context()
         page = context.new_page()
-        page.set_content(html)
 
-        # ✅ 確保 `.video-img-box` 存在
-        try:
-            page.wait_for_selector(".video-img-box", timeout=10000)
-            print("✅ 頁面載入完成")
-        except:
-            print("❌ 沒有找到影片")
-            return []
+        # ✅ 避免被封鎖，使用 Stealth
+        stealth_sync(page)
 
-        video_list = []
+        # ✅ 隨機 User-Agent
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
+        ]
+        page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
+
+        # ✅ **降低等待時間**
+        page.goto(url, timeout=20000)  # **減少超時時間**
+        page.wait_for_selector(".video-img-box", timeout=5000)  # **減少 selector 等待時間**
+
+        # ✅ **直接解析 HTML，不用 set_content()**
         videos = page.query_selector_all('.video-img-box')
 
+        video_list = []
         for video in videos[:3]:  # **取前三個影片**
             title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
 
@@ -1660,80 +1585,38 @@ def get_video_data_hotest():
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
+        # ✅ **減少記憶體佔用**
         browser.close()
         return video_list
 
 def get_video_data_newest():
     url = "https://jable.tv/latest-updates/"
-
-    # ✅ 使用 `cloudscraper` 嘗試繞過 Cloudflare
-    scraper = cloudscraper.create_scraper(
-        browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
-    )
-
-    def get_html_with_retry(url, max_retries=3):
-        for i in range(max_retries):
-            try:
-                response = scraper.get(url, timeout=10)
-                if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
-                    return response.text  # ✅ 成功獲取 HTML
-                print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.5)  # ✅ 等待 0.2 秒後重試
-            except Exception as e:
-                print(f"❌ 錯誤：{e}")
-        return None  # 🚨 3 次都失敗，回傳 None
-
-    html = get_html_with_retry(url)
-
-    # **如果 `cloudscraper` 失敗，改用 Playwright**
-    if html is None:
-        print("⚠️ Cloudscraper 失敗，改用 Playwright")
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = browser.new_context()
-            page = context.new_page()
-
-            stealth_sync(page)
-
-            # ✅ 隨機 User-Agent
-            user_agents = [
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
-            ]
-            page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
-
-            page.goto(url, timeout=50000)
-            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載完成
-
-            html = page.content()
-            browser.close()
-
-    # **確保 HTML 內容不是 Cloudflare 防護頁**
-    if "Just a moment..." in html or "challenge-error-text" in html:
-        print("❌ Cloudflare 防護阻擋，無法獲取內容")
-        return []
-
-    # ✅ 使用 Playwright 解析 HTML
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
+        )
         context = browser.new_context()
         page = context.new_page()
-        page.set_content(html)
 
-        # ✅ 確保 `.video-img-box` 存在
-        try:
-            page.wait_for_selector(".video-img-box", timeout=10000)
-            print("✅ 頁面載入完成")
-        except:
-            print("❌ 沒有找到影片")
-            return []
+        # ✅ 避免被封鎖，使用 Stealth
+        stealth_sync(page)
 
-        video_list = []
+        # ✅ 隨機 User-Agent
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
+        ]
+        page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
+
+        # ✅ **降低等待時間**
+        page.goto(url, timeout=20000)  # **減少超時時間**
+        page.wait_for_selector(".video-img-box", timeout=5000)  # **減少 selector 等待時間**
+
+        # ✅ **直接解析 HTML，不用 set_content()**
         videos = page.query_selector_all('.video-img-box')
 
+        video_list = []
         for video in videos[:3]:  # **取前三個影片**
             title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
 
@@ -1743,6 +1626,7 @@ def get_video_data_newest():
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
+        # ✅ **減少記憶體佔用**
         browser.close()
         return video_list
 
