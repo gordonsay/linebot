@@ -17,6 +17,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 from playwright.sync_api import sync_playwright
 from playwright_stealth import stealth_sync
+import cloudscraper
 
 # Load Environment Arguments
 load_dotenv()
@@ -1466,46 +1467,78 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
     return content
 
 def get_video_data(search_query):
-    # **直接修改 URL，讓搜尋結果按「最近更新」排序**
     url = f"https://jable.tv/search/{search_query}/?sort_by=post_date"
 
+    # ✅ 使用 `cloudscraper` 嘗試多次
+    scraper = cloudscraper.create_scraper(
+        browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
+    )
+
+    def get_html_with_retry(url, max_retries=3):
+        for i in range(max_retries):
+            try:
+                response = scraper.get(url, timeout=10)
+                if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
+                    return response.text  # ✅ 成功
+                print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
+                time.sleep(0.1)  # ✅ 等待 0.5 秒後重試
+            except Exception as e:
+                print(f"❌ 錯誤：{e}")
+        return None  # 🚨 3 次都失敗，回傳 None
+
+    html = get_html_with_retry(url)
+
+    # **如果 `cloudscraper` 失敗，改用 Playwright**
+    if html is None:
+        print("⚠️ Cloudscraper 失敗，改用 Playwright")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context()
+            page = context.new_page()
+
+            stealth_sync(page)
+
+            # ✅ 隨機 User-Agent
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
+            ]
+            page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
+
+            page.goto(url, timeout=50000)
+            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載
+
+            html = page.content()
+            browser.close()
+
+    # **確保 HTML 內容不是 Cloudflare 防護頁**
+    if "Just a moment..." in html or "challenge-error-text" in html:
+        print("❌ Cloudflare 防護阻擋，無法獲取內容")
+        return []
+
+    # ✅ 解析 HTML
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,  # ⚠️ 部署時設為 True
-            args=["--no-sandbox", "--disable-dev-shm-usage"]
-        )
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
+        page.set_content(html)
 
-        # **啟用 Stealth 模式**
-        stealth_sync(page)
+        # ✅ 確保 `.video-img-box` 存在
+        try:
+            # page.wait_for_selector(".video-img-box", timeout=10000)
+            print("✅ 頁面載入完成")
+        except:
+            print("❌ 沒有找到影片")
+            return []
 
-        # **設定 User-Agent 避免偵測**
-        page.set_extra_http_headers({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
-        })
-
-        # **打開修改後的搜尋頁面**
-        page.goto(url, timeout=20000)
-        page.wait_for_load_state("networkidle")  # **等待 AJAX 完全載入**
-        print("✅ 搜尋頁面載入完成（已按最新更新排序）")
-
-        # **等待影片列表加載**
-        page.wait_for_selector(".video-img-box", timeout=5000)
-        print("✅ 影片內容已加載")
-
-        # **滾動頁面讓圖片載入**
-        for _ in range(1):
-            page.mouse.wheel(0, 1000)
-            time.sleep(1)
-
-        # **提取影片資訊**
         video_list = []
         videos = page.query_selector_all('.video-img-box')
 
-        for video in videos[:3]:  # 取前三個影片
-            title_elem = video.query_selector('.title a')
-            img_elem = video.query_selector('.img-box img')
+        for video in videos[:3]:
+            title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
 
             title = title_elem.text_content().strip() if title_elem else "N/A"
             link = title_elem.get_attribute('href') if title_elem else "N/A"
