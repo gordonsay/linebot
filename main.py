@@ -581,8 +581,8 @@ def handle_message(event):
         send_response(event, reply_request)
         return
 
-    # (4-j)「精密搜尋」
-    if ("狗蛋開車") in user_message and ("最熱") not in user_message:
+    # (4-j)「狗蛋開車」
+    if ("狗蛋開車") in user_message and ("最熱") not in user_message and ("最新") not in user_message:
         search_query = user_message.replace("狗蛋開車", "").strip()
         
         if not search_query:
@@ -621,7 +621,7 @@ def handle_message(event):
         send_response(event, reply_request)  
         return  
 
-    # (4-k)「精密搜尋最熱」
+    # (4-k)「狗蛋開車最熱」
     if ("狗蛋開車") in user_message and ("最熱") in user_message:
         videos = get_video_data_hotest()  # ✅ 爬取影片
         print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
@@ -651,6 +651,37 @@ def handle_message(event):
                 )
         send_response(event, reply_request)  
         return  
+    
+    # (4-m)「狗蛋開車最新」
+    if ("狗蛋開車") in user_message and ("最新") in user_message:
+        videos = get_video_data_newest()  # ✅ 爬取影片
+        print(f"✅ [DEBUG] 爬取結果: {videos}")  # Debugging
+            
+        if not videos:
+            print("❌ [DEBUG] 爬取結果為空，回傳純文字訊息")
+            response_text = "找不到相關影片。"
+            reply_request = ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=response_text)]
+            )
+        else:
+            flex_message = create_flex_jable_message(videos)  # ✅ 生成 FlexMessage
+                
+            if flex_message is None:  # **確保 flex_message 不為 None**
+                print("❌ [DEBUG] FlexMessage 生成失敗，回傳純文字")
+                response_text = "找不到相關影片。"
+                reply_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=response_text)]
+                )
+            else:
+                # print(f"✅ [DEBUG] 生成的 FlexMessage: {flex_message}")
+                reply_request = ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[flex_message]
+                )
+        send_response(event, reply_request)  
+        return 
 
 
     # (5) 若在群組中且訊息中不包含「狗蛋」，則不觸發 AI 回應
@@ -1467,9 +1498,9 @@ def analyze_weather_with_ai(city, temp, humidity, weather_desc, wind_speed):
     return content
 
 def get_video_data(search_query):
-    url = f"https://jable.tv/search/{search_query}/?sort_by=post_date"
+    url = f"https://jable.tv/search/{search_query}/"
 
-    # ✅ 使用 `cloudscraper` 嘗試多次
+    # ✅ 使用 `cloudscraper` 先嘗試多次
     scraper = cloudscraper.create_scraper(
         browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
     )
@@ -1479,9 +1510,138 @@ def get_video_data(search_query):
             try:
                 response = scraper.get(url, timeout=10)
                 if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
-                    return response.text  # ✅ 成功
+                    return response.text  # ✅ 成功獲取 HTML
                 print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
-                time.sleep(0.1)  # ✅ 等待 0.5 秒後重試
+                time.sleep(0.1)  # ✅ 等待 0.1 秒後重試
+            except Exception as e:
+                print(f"❌ 錯誤：{e}")
+        return None  # 🚨 3 次都失敗，回傳 None
+
+    html = get_html_with_retry(url)
+
+    # **如果 `cloudscraper` 失敗，改用 Playwright**
+    if html is None:
+        print("⚠️ Cloudscraper 失敗，改用 Playwright")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context()
+            page = context.new_page()
+
+            stealth_sync(page)
+
+            # ✅ 隨機 User-Agent
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
+            ]
+            page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
+
+            # ✅ 進入頁面
+            page.goto(url, timeout=50000)
+            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載
+
+            # ✅ **找到所有排序按鈕，點擊「最近更新」**
+            try:
+                sort_buttons = page.query_selector_all("a[data-action='ajax']")
+                for button in sort_buttons:
+                    if "最近更新" in button.inner_text():
+                        button.click()
+                        print("✅ 點擊『最近更新』按鈕")
+                        time.sleep(2)  # **等待內容切換**
+                        break
+            except:
+                print("❌ 找不到『最近更新』按鈕")
+
+            # ✅ **關閉彈窗**
+            try:
+                close_button = page.query_selector(".asg-interstitial__btn.asg-interstitial__btn_large")
+                if close_button:
+                    close_button.click()
+                    print("✅ 彈窗已關閉")
+            except:
+                print("⚠️ 沒有找到彈窗")
+
+            # ✅ **檢測是否有其他彈窗**
+            try:
+                popup_close_button = page.query_selector("button:has-text('關閉')")
+                if popup_close_button:
+                    popup_close_button.click()
+                    print("✅ 其他彈窗已關閉")
+            except:
+                print("⚠️ 沒有額外彈窗")
+
+            # ✅ **再點一次「最近更新」，確保最新內容**
+            try:
+                sort_buttons = page.query_selector_all("a[data-action='ajax']")
+                for button in sort_buttons:
+                    if "最近更新" in button.inner_text():
+                        button.click()
+                        print("✅ 再次點擊『最近更新』按鈕")
+                        time.sleep(2)  # **等待內容切換**
+                        break
+            except:
+                print("❌ 再次點擊『最近更新』失敗")
+
+            # ✅ **等待影片列表載入**
+            page.wait_for_selector(".video-img-box", timeout=10000)
+
+            html = page.content()
+            browser.close()
+
+    # **確保 HTML 內容不是 Cloudflare 防護頁**
+    if "Just a moment..." in html or "challenge-error-text" in html:
+        print("❌ Cloudflare 防護阻擋，無法獲取內容")
+        return []
+
+    # ✅ 解析 HTML
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        page.set_content(html)
+
+        # ✅ 確保 `.video-img-box` 存在
+        try:
+            page.wait_for_selector(".video-img-box", timeout=10000)
+            print("✅ 頁面載入完成")
+        except:
+            print("❌ 沒有找到影片")
+            return []
+
+        video_list = []
+        videos = page.query_selector_all('.video-img-box')
+
+        for video in videos[:3]:  # **取前三個影片**
+            title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
+
+            title = title_elem.text_content().strip() if title_elem else "N/A"
+            link = title_elem.get_attribute('href') if title_elem else "N/A"
+            thumbnail = img_elem.get_attribute('data-src') or img_elem.get_attribute('src') if img_elem else "N/A"
+
+            video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
+
+        browser.close()
+        return video_list
+    
+def get_video_data_hotest():
+    url = "https://jable.tv/hot/"
+
+    # ✅ 使用 `cloudscraper` 嘗試繞過 Cloudflare
+    scraper = cloudscraper.create_scraper(
+        browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
+    )
+
+    def get_html_with_retry(url, max_retries=3):
+        for i in range(max_retries):
+            try:
+                response = scraper.get(url, timeout=10)
+                if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
+                    return response.text  # ✅ 成功獲取 HTML
+                print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
+                time.sleep(0.1)  # ✅ 等待 0.2 秒後重試
             except Exception as e:
                 print(f"❌ 錯誤：{e}")
         return None  # 🚨 3 次都失敗，回傳 None
@@ -1509,7 +1669,7 @@ def get_video_data(search_query):
             page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
 
             page.goto(url, timeout=50000)
-            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載
+            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載完成
 
             html = page.content()
             browser.close()
@@ -1519,7 +1679,7 @@ def get_video_data(search_query):
         print("❌ Cloudflare 防護阻擋，無法獲取內容")
         return []
 
-    # ✅ 解析 HTML
+    # ✅ 使用 Playwright 解析 HTML
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
@@ -1528,7 +1688,7 @@ def get_video_data(search_query):
 
         # ✅ 確保 `.video-img-box` 存在
         try:
-            # page.wait_for_selector(".video-img-box", timeout=10000)
+            page.wait_for_selector(".video-img-box", timeout=10000)
             print("✅ 頁面載入完成")
         except:
             print("❌ 沒有找到影片")
@@ -1537,7 +1697,7 @@ def get_video_data(search_query):
         video_list = []
         videos = page.query_selector_all('.video-img-box')
 
-        for video in videos[:3]:
+        for video in videos[:3]:  # **取前三個影片**
             title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
 
             title = title_elem.text_content().strip() if title_elem else "N/A"
@@ -1548,56 +1708,90 @@ def get_video_data(search_query):
 
         browser.close()
         return video_list
-    
-def get_video_data_hotest():
-    url = "https://jable.tv/hot/"
-    video_list = []
 
+def get_video_data_newest():
+    url = "https://jable.tv/latest-updates/"
+
+    # ✅ 使用 `cloudscraper` 嘗試繞過 Cloudflare
+    scraper = cloudscraper.create_scraper(
+        browser={'custom': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{random.randint(90, 110)}.0.0.0 Safari/537.36"}
+    )
+
+    def get_html_with_retry(url, max_retries=3):
+        for i in range(max_retries):
+            try:
+                response = scraper.get(url, timeout=10)
+                if "Just a moment..." not in response.text and "challenge-error-text" not in response.text:
+                    return response.text  # ✅ 成功獲取 HTML
+                print(f"⚠️ Cloudflare 阻擋，重試 {i+1} 次...")
+                time.sleep(0.1)  # ✅ 等待 0.2 秒後重試
+            except Exception as e:
+                print(f"❌ 錯誤：{e}")
+        return None  # 🚨 3 次都失敗，回傳 None
+
+    html = get_html_with_retry(url)
+
+    # **如果 `cloudscraper` 失敗，改用 Playwright**
+    if html is None:
+        print("⚠️ Cloudscraper 失敗，改用 Playwright")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context()
+            page = context.new_page()
+
+            stealth_sync(page)
+
+            # ✅ 隨機 User-Agent
+            user_agents = [
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Mobile Safari/537.36",
+            ]
+            page.set_extra_http_headers({"User-Agent": random.choice(user_agents)})
+
+            page.goto(url, timeout=50000)
+            page.wait_for_load_state("domcontentloaded")  # ✅ 等待 DOM 加載完成
+
+            html = page.content()
+            browser.close()
+
+    # **確保 HTML 內容不是 Cloudflare 防護頁**
+    if "Just a moment..." in html or "challenge-error-text" in html:
+        print("❌ Cloudflare 防護阻擋，無法獲取內容")
+        return []
+
+    # ✅ 使用 Playwright 解析 HTML
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,  # ✅ 確保不開啟瀏覽器
-            args=["--headless=new", "--no-sandbox", "--disable-dev-shm-usage"]
-        )
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
+        page.set_content(html)
 
-        # ✅ 啟用 Stealth 模式
-        stealth_sync(page)
+        # ✅ 確保 `.video-img-box` 存在
+        try:
+            page.wait_for_selector(".video-img-box", timeout=10000)
+            print("✅ 頁面載入完成")
+        except:
+            print("❌ 沒有找到影片")
+            return []
 
-        # ✅ 設定 User-Agent
-        page.set_extra_http_headers({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
-        })
-
-        # ✅ 打開目標頁面
-        page.goto(url, timeout=20000)
-        page.wait_for_load_state("networkidle")  # 確保 AJAX 內容載入
-
-        # ✅ 滾動頁面觸發懶加載
-        for _ in range(1):
-            page.mouse.wheel(0, 1000)
-            time.sleep(1)
-
-        # ✅ 等待影片元素載入
-        page.wait_for_selector(".video-img-box", timeout=5000)
-
-        # ✅ 抓取影片資訊
+        video_list = []
         videos = page.query_selector_all('.video-img-box')
-        for video in videos[:3]:  # 取前三個影片
-            title_elem = video.query_selector('.title a')
-            img_elem = video.query_selector('.img-box img')
 
-            title = title_elem.inner_text().strip() if title_elem else "N/A"
+        for video in videos[:3]:  # **取前三個影片**
+            title_elem, img_elem = video.query_selector('.title a'), video.query_selector('.img-box img')
+
+            title = title_elem.text_content().strip() if title_elem else "N/A"
             link = title_elem.get_attribute('href') if title_elem else "N/A"
-
-            # ✅ 優先使用 `data-src` 避免黑色圖片
             thumbnail = img_elem.get_attribute('data-src') or img_elem.get_attribute('src') if img_elem else "N/A"
 
             video_list.append({"title": title, "link": link, "thumbnail": thumbnail})
 
         browser.close()
+        return video_list
 
-    return video_list
 
 def create_flex_jable_message(videos):
     if not videos:
